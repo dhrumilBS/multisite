@@ -86,7 +86,7 @@ const SFX = {
     [392, 349.23, 293.66, 246.94].forEach((f, i) => tone(ctx, f, t + i * 0.17, 0.55, "sawtooth", 0.11));
   },
 };
-// AudioContext needs a user gesture before it can play on most browsers —
+// AudioContext needs a user gesture before it can play on most browsers -
 // prime it on the first tap/click anywhere in the app.
 document.addEventListener("pointerdown", () => getAudioCtx(), { once: true });
 
@@ -128,6 +128,10 @@ const THEMES = [
   { id: "classic", label: "Classic Casino", bg: "#0b2b26", accent: "#e6b84c" },
   { id: "midnight", label: "Midnight Neon", bg: "#07061a", accent: "#5ce1ff" },
   { id: "royal", label: "Royal Purple", bg: "#1c0d24", accent: "#e0a860" },
+  { id: "crimson", label: "Crimson Noir", bg: "#0a0404", accent: "#e8b23c" },
+  { id: "ocean", label: "Ocean Teal", bg: "#04181c", accent: "#3fd0e0" },
+  { id: "sunset", label: "Sunset Blaze", bg: "#1a0a1c", accent: "#ff8a3d" },
+  { id: "forest", label: "Forest Wood", bg: "#140f06", accent: "#8fbf5c" },
   { id: "light", label: "Light / High-contrast", bg: "#e6e0cc", accent: "#b8860b" },
 ];
 function applyTheme(id) {
@@ -348,15 +352,25 @@ function renderLobby() {
 }
 
 // ---------- game rendering ----------
-// Trick cards land in a small band left-of-center (opponent plays) or
-// right-of-center (own-team plays), spread out slightly and staggered by
-// play order, mirroring the opponents-left/own-team-right seat layout.
-function trickSlotPos(side, indexWithinSide, countOnSide) {
-  const spread = 10;
-  const baseX = side === "opp" ? 38 : 62;
-  const x = baseX + (indexWithinSide - (countOnSide - 1) / 2) * spread;
-  const y = 50 + indexWithinSide * 3;
-  return { x, y };
+// Seats sit around an ellipse in real seating order - starting with "you"
+// at the bottom (6 o'clock) and going seat-by-seat around the table, which
+// is exactly the opponent/mine/opponent/mine alternation since teams are
+// assigned by seat parity (seat % 2). Percentages are relative to the
+// table-area's own box, so the ellipse reshapes to fit portrait phones and
+// wide desktops alike without any breakpoint-specific math.
+function seatAngle(seat, you, n) {
+  const k = (seat - you + n) % n;
+  return (180 - k * (360 / n) + 360) % 360; // degrees, 0 = top, clockwise
+}
+function seatPos(angleDeg, rx, ry) {
+  const rad = (angleDeg * Math.PI) / 180;
+  return { x: 50 + rx * Math.sin(rad), y: 50 - ry * Math.cos(rad) };
+}
+// Trick cards rest in a small ring near the felt's center, each one biased
+// toward the side of the table its player is sitting on - so a card looks
+// like it was played *from* that seat, no matter how many players there are.
+function trickSlotPos(angleDeg) {
+  return seatPos(angleDeg, 15, 13);
 }
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
@@ -396,25 +410,20 @@ function renderGame() {
   $("bMatch").innerHTML = `<span class="t-you">${state.matchScore[myTeam]}</span>:<span class="t-opp">${state.matchScore[1 - myTeam]}</span>`;
   $("btnLastTrick").style.display = g.lastTrick ? "inline-block" : "none";
 
-  // seats — opponents in the left column, own team in the right column (you last/bottom)
-  const oppLayer = $("seatsOpp");
-  const mineLayer = $("seatsMine");
-  oppLayer.innerHTML = "";
-  mineLayer.innerHTML = "";
-  const oppSeats = [];
-  const mineSeats = [];
-  for (let seat = 0; seat < n; seat++) (seat % 2 === myTeam ? mineSeats : oppSeats).push(seat);
-  const byTurnOrder = (a, b) => (a - you + n) % n - ((b - you + n) % n);
-  oppSeats.sort(byTurnOrder);
-  mineSeats.sort(byTurnOrder);
-  const youIdx = mineSeats.indexOf(you);
-  if (youIdx !== -1) mineSeats.push(mineSeats.splice(youIdx, 1)[0]);
+  // seats - placed one by one around the table in real seating order
+  // (starting at "you", bottom-center, then seat-by-seat around), which
+  // naturally alternates opponent/mine/opponent/mine since teams are
+  // assigned by seat parity.
+  const ring = $("seatsRing");
+  ring.innerHTML = "";
+  const RX = 45, RY = 41;
 
   function renderSeat(seat) {
     const isTurn = state.phase === "playing" && g.turnSeat === seat && !state.paused;
     const s = state.seats[seat];
+    const mine = seat % 2 === myTeam;
     const div = document.createElement("div");
-    div.className = `seat${isTurn ? " turn" : ""}${seat === you ? " me" : ""}`;
+    div.className = `seat${isTurn ? " turn" : ""}${seat === you ? " me" : ""} ${mine ? "team-mine" : "team-opp"}`;
     if (seat === you) {
       div.innerHTML = `<div class="avatar">You${isTurn ? " · your turn" : ""}</div>`;
     } else {
@@ -425,25 +434,31 @@ function renderGame() {
     }
     return div;
   }
-  oppSeats.forEach((seat) => oppLayer.appendChild(renderSeat(seat)));
-  mineSeats.forEach((seat) => mineLayer.appendChild(renderSeat(seat)));
+  for (let k = 0; k < n; k++) {
+    const seat = (you + k) % n;
+    const angle = seatAngle(seat, you, n);
+    const pos = seatPos(angle, seat === you ? RX * 0.7 : RX, seat === you ? RY * 1.12 : RY);
+    const el = renderSeat(seat);
+    el.style.left = pos.x + "%";
+    el.style.top = pos.y + "%";
+    ring.appendChild(el);
+  }
 
-  // trick cards — opponent plays land left-of-center, own-team plays right-of-center
+  // trick cards - each one rests biased toward its player's seat, so the
+  // table always reads as "this card came from that seat"
   const trickLayer = $("trickLayer");
   trickLayer.innerHTML = "";
-  const oppPlayed = g.trick.filter((t) => t.seat % 2 !== myTeam);
-  const minePlayed = g.trick.filter((t) => t.seat % 2 === myTeam);
-  let oi = 0, mi = 0;
   g.trick.forEach((t) => {
-    const side = t.seat % 2 === myTeam ? "mine" : "opp";
-    const idx = side === "opp" ? oi++ : mi++;
-    const count = side === "opp" ? oppPlayed.length : minePlayed.length;
-    const pos = trickSlotPos(side, idx, count);
+    const angle = seatAngle(t.seat, you, n);
+    const pos = trickSlotPos(angle);
+    const rad = (angle * Math.PI) / 180;
     const wrap = document.createElement("div");
     wrap.className = "trick-card";
-    wrap.dataset.side = side;
+    wrap.dataset.side = t.seat % 2 === myTeam ? "mine" : "opp";
     wrap.style.left = pos.x + "%";
     wrap.style.top = pos.y + "%";
+    wrap.style.setProperty("--fx", Math.round(Math.sin(rad) * 90) + "px");
+    wrap.style.setProperty("--fy", Math.round(-Math.cos(rad) * 90) + "px");
     wrap.innerHTML = cardHTML(t.card, "sm");
     trickLayer.appendChild(wrap);
 
@@ -469,13 +484,13 @@ function renderGame() {
 
   // status line
   let status;
-  if (state.paused) status = "Paused — waiting for a player…";
+  if (state.paused) status = "Paused - waiting for a player…";
   else if (state.phase === "handEnd") status = "Hand complete";
   else if (state.phase === "trumpSelect")
     status = g.chooser === you ? "Pick the hidden trump" : `${esc(names[g.chooser])} is choosing the trump…`;
   else if (g.trick.length === n) status = "Resolving trick…";
   else if (g.turnSeat === you)
-    status = g.trick.length === 0 ? "You lead — play any card" : `Follow ${SUIT_NAME[g.trick[0].card.suit]} if you can`;
+    status = g.trick.length === 0 ? "You lead - play any card" : `Follow ${SUIT_NAME[g.trick[0].card.suit]} if you can`;
   else status = `${esc(names[g.turnSeat])} is thinking…`;
   $("statusLine").innerHTML = status;
 
@@ -550,14 +565,14 @@ function renderGame() {
     act.appendChild(exitB);
   }
 
-  // match end (the whole match, not just one hand — server auto-deletes the room after this)
+  // match end (the whole match, not just one hand - server auto-deletes the room after this)
   $("ovMatchEnd").style.display = state.phase === "matchEnd" && state.matchResult ? "flex" : "none";
   if (state.phase === "matchEnd" && state.matchResult) {
     const mr = state.matchResult;
     const wonMatch = mr.winner === myTeam;
     $("meTitle").textContent = wonMatch ? "You won the match!" : "Opponents won the match";
     $("meTitle").style.color = wonMatch ? "#7ee0a3" : "#f08a7e";
-    $("meScore").textContent = `Final score — You ${mr.score[myTeam]} : ${mr.score[1 - myTeam]} Them (first to ${mr.target})`;
+    $("meScore").textContent = `Final score - You ${mr.score[myTeam]} : ${mr.score[1 - myTeam]} Them (first to ${mr.target})`;
   }
 
   // hand end
@@ -583,7 +598,7 @@ function renderGame() {
         </div>`;
       })
       .join("");
-    $("heMatch").textContent = `Match score — You ${state.matchScore[myTeam]} : ${state.matchScore[1 - myTeam]} Them`;
+    $("heMatch").textContent = `Match score - You ${state.matchScore[myTeam]} : ${state.matchScore[1 - myTeam]} Them`;
     const isHost = state.seats[you].isHost;
     $("btnNextHand").style.display = isHost ? "block" : "none";
     $("btnEndRoom").style.display = isHost ? "block" : "none";
@@ -610,7 +625,7 @@ function showTrumpReveal(suit) {
   const card = $("trumpRevealCard");
   card.className = "trump-reveal-card" + (isRed(suit) ? " red" : "");
   card.innerHTML = suitIcon(suit);
-  $("trumpRevealLabel").textContent = `Trump revealed — ${SUIT_NAME[suit]}!`;
+  $("trumpRevealLabel").textContent = `Trump revealed - ${SUIT_NAME[suit]}!`;
   ov.style.display = "flex";
   ov.classList.remove("show");
   void ov.offsetWidth; // restart animation if triggered again quickly
@@ -632,7 +647,7 @@ $("btnLastTrick").onclick = () => {
   const lt = state.game && state.game.lastTrick;
   if (!lt) return;
   const names = state.seats.map((s) => s.name || "?");
-  $("ltTitle").textContent = `Last trick — won by ${names[lt.winner]}`;
+  $("ltTitle").textContent = `Last trick - won by ${names[lt.winner]}`;
   $("ltCards").innerHTML = lt.cards
     .map((t) => `<div class="lt-item">${cardHTML(t.card, t.seat === lt.winner ? "win" : "")}<div class="nm">${esc(names[t.seat])}</div></div>`)
     .join("");
@@ -663,7 +678,7 @@ $("btnMatchHome").onclick = () => {
 // save & exit
 function doSaveExit() {
   socket.emit("saveExit", {}, () => {
-    toast("Progress saved — resume any time from the home screen.");
+    toast("Progress saved - resume any time from the home screen.");
     state = null;
     show("screen-home");
     renderResumeList();
@@ -714,7 +729,7 @@ function applyState(s, extra) {
 
     const myTeam = s.you % 2;
 
-    // A ten just landed in someone's capture pile — play the "earned 10
+    // A ten just landed in someone's capture pile - play the "earned 10
     // points" sting (a brighter tone for our team, a duller one for theirs).
     if (prev && prev.game && s.game) {
       const prevTotal = prev.game.captured[0].tens.length + prev.game.captured[1].tens.length;
@@ -725,14 +740,14 @@ function applyState(s, extra) {
       }
     }
 
-    // Hand just finished — win/lose fanfare (once, on the transition).
+    // Hand just finished - win/lose fanfare (once, on the transition).
     if (s.phase === "handEnd" && s.game && s.game.result && !(prev && prev.phase === "handEnd")) {
       const r = s.game.result;
       if (r.winner === myTeam) SFX.win();
       else if (r.winner !== null) SFX.lose();
     }
 
-    // Whole match just finished — bigger fanfare, once, on the transition.
+    // Whole match just finished - bigger fanfare, once, on the transition.
     if (s.phase === "matchEnd" && s.matchResult && !(prev && prev.phase === "matchEnd")) {
       if (s.matchResult.winner === myTeam) SFX.win();
       else SFX.lose();
@@ -761,5 +776,5 @@ socket.on("connect", () => {
   }
 });
 socket.on("disconnect", () => {
-  if (state) toast("Connection lost — reconnecting…", 4000);
+  if (state) toast("Connection lost - reconnecting…", 4000);
 });

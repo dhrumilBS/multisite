@@ -1,4 +1,4 @@
-// Core Mindi (Mendikot) rules — pure functions, no state.
+// Core Mindi (Mendikot) rules - pure functions, no state.
 "use strict";
 
 const SUITS = ["S", "H", "D", "C"];
@@ -112,12 +112,12 @@ function sortHand(hand) {
 const isTen = (c) => c.rank === 10;
 
 // trick: [{seat, card}] in play order. On a tie for highest card (possible with
-// multiple decks — e.g. two 10-of-spades), the tied players' next-highest
+// multiple decks - e.g. two 10-of-spades), the tied players' next-highest
 // REMAINING hand card is compared (peek only, nothing is played/removed); ties
 // keep recursing to the next-highest remaining card until broken. If tied
 // players run out of cards at the same depth (last trick of a hand), the
 // first card played wins as a final fallback. `hands` is optional and indexed
-// by seat — omit it (as the bot's speculative "who's winning" checks do) to
+// by seat - omit it (as the bot's speculative "who's winning" checks do) to
 // get the plain first-played-wins behavior with no peeking.
 function trickWinner(trick, trumpSuit, trumpActive, hands) {
   let best = trick[0];

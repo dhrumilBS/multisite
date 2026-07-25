@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-<title>Mindi — Live Multiplayer</title>
+<title>Mindi - Live Multiplayer</title>
 <link rel="stylesheet" href="style.css" />
 <script>
   // Applied synchronously, before first paint, to avoid a flash of the
@@ -91,7 +91,7 @@
     <div class="panel">
       <div class="lobby-head">
         <div>
-          <div class="lbl">Room code — share with friends</div>
+          <div class="lbl">Room code - share with friends</div>
           <div class="roomcode" id="lobbyCode">------</div>
         </div>
         <div class="head-actions">
@@ -120,7 +120,7 @@
     <div class="panel small center">
       <div class="spinner"></div>
       <h2>Waiting for the host</h2>
-      <p class="muted">Room <b id="pendingCode">------</b> — the host needs to let you in.</p>
+      <p class="muted">Room <b id="pendingCode">------</b> - the host needs to let you in.</p>
       <button id="btnCancelPending" class="dark" style="margin-top:14px">Cancel</button>
     </div>
   </div>
@@ -131,7 +131,7 @@
   <div class="topbar">
     <div class="logo">Mindi <span id="gameMeta"></span></div>
     <div class="badges">
-      <div class="badge"><span class="badge-l">Trump</span><span id="bTrump">—</span></div>
+      <div class="badge"><span class="badge-l">Trump</span><span id="bTrump">-</span></div>
       <div class="badge"><span class="badge-l">Tens</span><span id="bTens">0:0</span></div>
       <div class="badge"><span class="badge-l">Match</span><span id="bMatch">0:0</span></div>
       <button id="btnLastTrick" class="tiny" style="display:none">Last trick</button>
@@ -142,14 +142,13 @@
   </div>
 
   <div class="table-area" id="tableArea">
-    <div class="seat-col seat-col-opp" id="seatsOpp"></div>
     <div class="table-center">
       <div class="felt"></div>
       <div class="felt-text">MINDI</div>
       <div id="trickLayer"></div>
       <div class="status" id="statusLine"></div>
     </div>
-    <div class="seat-col seat-col-mine" id="seatsMine"></div>
+    <div class="seats-ring" id="seatsRing"></div>
   </div>
 
   <div class="hand-area">
@@ -160,7 +159,7 @@
   <div id="ovTrump" class="overlay" style="display:none">
     <div class="panel small">
       <h2>Choose the hidden trump</h2>
-      <p class="muted">You lead this hand — pick a suit secretly. It reveals the first time anyone can't follow suit.</p>
+      <p class="muted">You lead this hand - pick a suit secretly. It reveals the first time anyone can't follow suit.</p>
       <div class="suitrow">
         <button class="suitbtn" data-s="S">♠</button>
         <button class="suitbtn red" data-s="H">♥</button>
@@ -175,7 +174,7 @@
     <div class="panel small center">
       <h2>Game paused</h2>
       <p class="muted" id="pausedWho"></p>
-      <p class="muted">Progress is saved. They can rejoin with the room code any time — or the host can hand their seat to a bot.</p>
+      <p class="muted">Progress is saved. They can rejoin with the room code any time - or the host can hand their seat to a bot.</p>
       <div id="pausedActions"></div>
     </div>
   </div>
@@ -198,7 +197,7 @@
     <div class="panel small">
       <h2 id="meTitle" class="center"></h2>
       <p id="meScore" class="center gold-text"></p>
-      <p class="muted center">The room has closed — thanks for playing!</p>
+      <p class="muted center">The room has closed - thanks for playing!</p>
       <button id="btnMatchHome" class="gold" style="margin-top:14px">Back to home</button>
     </div>
   </div>

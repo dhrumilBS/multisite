@@ -2,7 +2,7 @@
 html, body { height: 100%; }
 
 /* ---------- theme tokens ---------- */
-/* Classic Casino (default) — this is today's exact original palette, kept as
+/* Classic Casino (default) - this is today's exact original palette, kept as
    the zero-regression default so no [data-theme] attribute is needed for it. */
 :root {
   --bg-a: #14453d; --bg-b: #0b2b26;
@@ -17,7 +17,7 @@ html, body { height: 100%; }
   --felt-a: #1a5c50; --felt-b: #113f37; --felt-rim: #4a2c1a;
   --scrim-rgb: 4,18,15;
   --avatar-text: #0b2b26;
-  /* Cards look like real cards in every theme — these never change per-theme. */
+  /* Cards look like real cards in every theme - these never change per-theme. */
   --card-bg: #fdfcf7; --card-border: #b9b3a4; --card-text: #1c2733;
   --card-red: #c0392b; --card-ten-bg: #fff8e1; --card-star: #b8860b;
 }
@@ -65,6 +65,66 @@ html, body { height: 100%; }
   --felt-a: #c9dccb; --felt-b: #aac6ae; --felt-rim: #7a5230;
   --scrim-rgb: 20,25,20;
   --avatar-text: #ffffff;
+}
+
+[data-theme="crimson"] {
+  --bg-a: #2b0d10; --bg-b: #0a0404;
+  --text: #f5e6e0; --text-muted: #d9b9b3; --text-faint: #a8827c;
+  --surface: #1a0808; --surface-2: #210b0b; --surface-3: #341012; --border: #5c2020;
+  --accent: #e8b23c; --accent-rgb: 232,178,60; --accent-dark: #c48f22;
+  --accent-contrast: #2b0d10; --accent-text: #f0c878;
+  --gold-text: #f7ddb0; --gold-text-soft: #eccf95;
+  --danger: #ff6b6b;
+  --team-a: #4fae7a; --team-a-soft: #7ee0a3; --team-a-border: #2e7050;
+  --team-b: #d1453f; --team-b-soft: #ff8a85; --team-b-border: #7a2b28;
+  --felt-a: #4a1216; --felt-b: #1c0708; --felt-rim: #120404;
+  --scrim-rgb: 8,2,2;
+  --avatar-text: #150404;
+}
+
+[data-theme="ocean"] {
+  --bg-a: #0d3b45; --bg-b: #04181c;
+  --text: #e3f4f2; --text-muted: #a9cfc9; --text-faint: #7fa8a1;
+  --surface: #0a2e35; --surface-2: #0f3841; --surface-3: #154752; --border: #1f5b66;
+  --accent: #3fd0e0; --accent-rgb: 63,208,224; --accent-dark: #26a8b8;
+  --accent-contrast: #04181c; --accent-text: #7fe0ea;
+  --gold-text: #d8f5f2; --gold-text-soft: #c3ece7;
+  --danger: #ff8a7a;
+  --team-a: #4fd88a; --team-a-soft: #84f2b0; --team-a-border: #2e9860;
+  --team-b: #ff8a5c; --team-b-soft: #ffb08a; --team-b-border: #a8502e;
+  --felt-a: #0f4a52; --felt-b: #082830; --felt-rim: #123842;
+  --scrim-rgb: 3,14,17;
+  --avatar-text: #04181c;
+}
+
+[data-theme="sunset"] {
+  --bg-a: #4a1942; --bg-b: #1a0a1c;
+  --text: #fbe9e0; --text-muted: #dcb3ac; --text-faint: #b1837c;
+  --surface: #341530; --surface-2: #3f1a3a; --surface-3: #552348; --border: #6e2f5c;
+  --accent: #ff8a3d; --accent-rgb: 255,138,61; --accent-dark: #d66a24;
+  --accent-contrast: #2b0f08; --accent-text: #ffab6b;
+  --gold-text: #ffd7a8; --gold-text-soft: #f5c690;
+  --danger: #ff5f7a;
+  --team-a: #4fc98a; --team-a-soft: #82e8ae; --team-a-border: #2e8f5f;
+  --team-b: #ff5f7a; --team-b-soft: #ff92a4; --team-b-border: #a83a4c;
+  --felt-a: #5c1f4a; --felt-b: #260d22; --felt-rim: #3a1428;
+  --scrim-rgb: 12,4,10;
+  --avatar-text: #1a0a1c;
+}
+
+[data-theme="forest"] {
+  --bg-a: #2e2410; --bg-b: #140f06;
+  --text: #f0e6d2; --text-muted: #c9b78f; --text-faint: #a08e68;
+  --surface: #231b0d; --surface-2: #2b2110; --surface-3: #3a2c15; --border: #5c4520;
+  --accent: #8fbf5c; --accent-rgb: 143,191,92; --accent-dark: #6b9940;
+  --accent-contrast: #182b0c; --accent-text: #a8d47a;
+  --gold-text: #e8d5a0; --gold-text-soft: #dcc78a;
+  --danger: #e0715a;
+  --team-a: #5cb885; --team-a-soft: #7ee0a3; --team-a-border: #3f8f6b;
+  --team-b: #c98a4a; --team-b-soft: #e0ab72; --team-b-border: #8f5c2f;
+  --felt-a: #3a5c2a; --felt-b: #1c3012; --felt-rim: #4a2c1a;
+  --scrim-rgb: 10,7,3;
+  --avatar-text: #140f06;
 }
 
 body {
@@ -195,7 +255,7 @@ button { font-family: inherit; }
 .wait-note { text-align: center; color: var(--text-faint); font-size: 13px; margin-top: 12px; }
 
 /* ---------- game ---------- */
-.topbar { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; gap: 8px; flex-wrap: wrap; }
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
 .logo { font-family: Georgia, serif; color: var(--gold-text); font-size: 20px; }
 .logo span { font-size: 12px; color: var(--text-faint); font-family: 'Segoe UI', sans-serif; }
 .badges { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
@@ -209,23 +269,32 @@ button { font-family: inherit; }
 
 #screen-game { display: flex; flex-direction: column; overflow: hidden; }
 .table-area {
-  flex: 1; display: grid; grid-template-columns: minmax(76px,120px) 1fr minmax(76px,120px);
-  gap: 6px; margin: 4px 8px; min-height: 300px;
+  flex: 1 1 auto; position: relative; margin: 4px 8px; min-height: 0;
 }
-.seat-col { display: flex; flex-direction: column; justify-content: center; gap: 14px; overflow-y: auto; min-height: 0; }
-.seat-col-mine { justify-content: flex-end; }
-.table-center { position: relative; }
+.table-center { position: absolute; inset: 0; }
 .felt {
-  position: absolute; inset: 6% 4%; border-radius: 50%;
+  position: absolute; inset: 13% 10%; border-radius: 50%;
   background: radial-gradient(ellipse, var(--felt-a) 0%, var(--felt-b) 75%);
   border: 10px solid var(--felt-rim);
-  box-shadow: inset 0 0 60px rgba(0,0,0,.45), 0 8px 30px rgba(0,0,0,.5);
+  box-shadow:
+    inset 0 0 0 2px rgba(var(--accent-rgb),.14),
+    inset 0 0 60px rgba(0,0,0,.45),
+    0 8px 30px rgba(0,0,0,.5);
 }
 .felt-text {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
   color: rgba(var(--accent-rgb),.12); font-family: Georgia, serif; font-size: 44px; letter-spacing: 4px; pointer-events: none;
 }
-.seat { text-align: center; z-index: 3; }
+
+/* seats are placed one by one around the table in real seating order
+   (opponent, mine, opponent, mine, …) via inline left/top % set in JS -
+   percentages here are relative to table-area's own box, so the same
+   ellipse math naturally reshapes to portrait phones vs. wide desktops. */
+.seats-ring { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+.seat {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+  text-align: center; width: 74px; transition: left .25s ease, top .25s ease;
+}
 .seat .avatar {
   width: 46px; height: 46px; border-radius: 50%; margin: 0 auto;
   display: flex; align-items: center; justify-content: center;
@@ -233,28 +302,40 @@ button { font-family: inherit; }
   border: 3px solid rgba(0,0,0,.25); box-shadow: 0 2px 6px rgba(0,0,0,.4);
   transition: all .2s;
 }
-.seat-col-mine .avatar { background: linear-gradient(180deg,var(--team-a-soft),var(--team-a)); }
-.seat-col-opp .avatar { background: linear-gradient(180deg,var(--team-b-soft),var(--team-b)); }
-.seat.turn .avatar { border-color: var(--accent); box-shadow: 0 0 14px rgba(var(--accent-rgb),.9); }
+.seat.team-mine .avatar { background: linear-gradient(180deg,var(--team-a-soft),var(--team-a)); }
+.seat.team-opp .avatar { background: linear-gradient(180deg,var(--team-b-soft),var(--team-b)); }
+.seat.turn .avatar { border-color: var(--accent); box-shadow: 0 0 14px rgba(var(--accent-rgb),.9); transform: scale(1.08); animation: turnPulse 1.4s ease-in-out infinite; }
+@keyframes turnPulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(var(--accent-rgb),.7); }
+  50% { box-shadow: 0 0 20px rgba(var(--accent-rgb),1); }
+}
 .seat .nm { font-size: 12px; font-weight: 600; margin-top: 3px; text-shadow: 0 1px 3px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.seat .sub { font-size: 10px; color: var(--text-faint); }
+.seat .sub { font-size: 10px; color: var(--text-faint); white-space: nowrap; }
 .seat .sub .offline { color: var(--danger); }
-.seat.me .avatar { border-radius: 20px; width: auto; padding: 0 14px; font-size: 13px; height: 34px; }
-.trick-card { position: absolute; transform: translate(-50%,-50%); z-index: 5; }
-.trick-card[data-side="opp"] { animation: dropFromLeft .3s ease-out; }
-.trick-card[data-side="mine"] { animation: dropFromRight .3s ease-out; }
-@keyframes dropFromLeft { from { transform: translate(calc(-50% - 90px),-50%) scale(.75); opacity: 0; } to { transform: translate(-50%,-50%) scale(1); opacity: 1; } }
-@keyframes dropFromRight { from { transform: translate(calc(-50% + 90px),-50%) scale(.75); opacity: 0; } to { transform: translate(-50%,-50%) scale(1); opacity: 1; } }
+.seat.me { width: auto; margin-left: 0; }
+.seat.me .avatar {
+  border-radius: 20px; width: auto; padding: 0 16px; font-size: 13px; height: 34px;
+  background: linear-gradient(180deg,var(--team-a-soft),var(--team-a)); color: var(--avatar-text); white-space: nowrap;
+}
+.trick-card { position: absolute; transform: translate(-50%,-50%); z-index: 5; animation: dropIn .32s ease-out; }
+@keyframes dropIn {
+  from { transform: translate(calc(-50% + var(--fx, 0px)), calc(-50% + var(--fy, 0px))) scale(.7); opacity: 0; }
+  to { transform: translate(-50%,-50%) scale(1); opacity: 1; }
+}
+/* Sits just under the felt's centered wordmark — well clear of the "you"
+   seat down at the bottom edge of the ellipse, so the two never overlap. */
 .status {
-  position: absolute; left: 50%; bottom: 2%; transform: translateX(-50%);
-  color: var(--accent-text); font-size: 12px; text-shadow: 0 1px 3px #000; white-space: nowrap; z-index: 4;
+  position: absolute; left: 50%; top: 61%; transform: translateX(-50%);
+  color: var(--accent-text); font-size: 12px; text-shadow: 0 1px 3px #000; white-space: nowrap; z-index: 6;
+  background: rgba(var(--scrim-rgb),.75); padding: 3px 10px; border-radius: 20px;
+  max-width: 90%; overflow: hidden; text-overflow: ellipsis;
 }
 
-.hand-area { padding: 4px 8px 12px; }
-.hand-row { display: flex; overflow-x: auto; padding: 10px 6px 6px; justify-content: center; }
-.hand-row.many { justify-content: flex-start; }
+.hand-area { padding: 4px 8px 12px; flex-shrink: 0; }
+.hand-row { display: flex; overflow-x: auto; overflow-y: hidden; padding: 10px 6px 6px; justify-content: center; -webkit-overflow-scrolling: touch; }
+.hand-row.many, .hand-row.overlap { justify-content: flex-start; }
 
-/* card — colors stay constant across themes (a real card looks the same regardless of felt) */
+/* card - colors stay constant across themes (a real card looks the same regardless of felt) */
 .card {
   width: 58px; height: 82px; border-radius: 7px; background: var(--card-bg);
   border: 1px solid var(--card-border); box-shadow: 0 2px 4px rgba(0,0,0,.35);
@@ -303,6 +384,7 @@ button { font-family: inherit; }
   position: fixed; inset: 0; background: rgba(var(--scrim-rgb),.82); z-index: 50;
   display: flex; align-items: center; justify-content: center; padding: 16px;
 }
+.overlay .panel { max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); overflow-y: auto; }
 .suitrow { display: flex; gap: 10px; justify-content: center; margin: 16px 0; }
 .suitbtn {
   font-size: 34px; width: 62px; height: 62px; border-radius: 12px; cursor: pointer;
@@ -335,7 +417,7 @@ button { font-family: inherit; }
 .chat-input { display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--border); }
 .chat-input .txt { padding: 8px 10px; font-size: 13px; }
 
-/* trump reveal — a large, dramatic moment (scales with viewport, capped) */
+/* trump reveal - a large, dramatic moment (scales with viewport, capped) */
 .trump-reveal-overlay {
   position: fixed; inset: 0; z-index: 90; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 18px; pointer-events: none;
@@ -388,9 +470,41 @@ button { font-family: inherit; }
   .card { width: 50px; height: 72px; }
   .card .rank { font-size: 15px; }
   .card .suit-icon.watermark { width: 26px; height: 26px; }
-  .table-area { grid-template-columns: 56px 1fr 56px; }
-  .seat-col { gap: 8px; }
+  .seat { width: 62px; }
   .seat .avatar { width: 40px; height: 40px; font-size: 16px; }
+  .seat .nm { font-size: 11px; }
+  .seat .sub { font-size: 9px; }
   .felt-text { font-size: 30px; }
   .lobby-seats { grid-template-columns: 1fr; }
+  .topbar { padding: 6px 8px; }
+  .logo { font-size: 17px; }
+  .badge { padding: 3px 7px; font-size: 12px; }
+}
+
+@media (max-width: 400px) {
+  .card { width: 42px; height: 60px; }
+  .card .rank { font-size: 13px; }
+  .card .tl, .card .br { gap: 0; }
+  .card .suit-icon.corner { width: 10px; height: 10px; }
+  .card .suit-icon.watermark { width: 20px; height: 20px; }
+  .hand-row.overlap .card { margin-left: -20px; }
+  .hand-row.many .card { margin-left: -26px; }
+  .seat { width: 52px; }
+  .seat .avatar { width: 34px; height: 34px; font-size: 14px; border-width: 2px; }
+  .seat .nm { font-size: 10px; }
+  .seat .sub { display: none; }
+  .seat.me .avatar { height: 28px; padding: 0 11px; font-size: 11px; }
+  .felt-text { font-size: 22px; }
+  .status { font-size: 11px; padding: 2px 8px; }
+}
+
+/* Short / landscape phones: the table can compress, but the hand of cards
+   must never be pushed out of view. */
+@media (max-height: 560px) {
+  .topbar { padding: 4px 8px; }
+  .table-area { min-height: 130px; }
+  .hand-area { padding: 2px 6px 8px; }
+  .card { height: 64px; width: 46px; }
+  .seat .avatar { width: 34px; height: 34px; font-size: 14px; }
+  .seat .sub { display: none; }
 }

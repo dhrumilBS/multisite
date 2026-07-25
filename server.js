@@ -1,4 +1,4 @@
-// Mindi multiplayer server — Express + Socket.IO, authoritative game state,
+// Mindi multiplayer server - Express + Socket.IO, authoritative game state,
 // bots for empty seats, pause on disconnect, save/resume from disk.
 "use strict";
 

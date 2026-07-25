@@ -23,7 +23,7 @@ const rooms = new Map(); // code -> room
 
 const BOT_NAMES = ["Arjun", "Priya", "Kabir", "Meera", "Ravi", "Anaya", "Dev", "Isha"];
 
-// Exact charset makeCode() draws from — also used to validate any client-
+// Exact charset makeCode() draws from - also used to validate any client-
 // supplied code before it ever touches the filesystem (see loadRoom below).
 const CODE_CHARSET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const CODE_RE = new RegExp(`^[${CODE_CHARSET}]{6}$`);

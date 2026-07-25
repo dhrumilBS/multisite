@@ -1,7 +1,7 @@
 {
   "name": "mindi-multiplayer",
   "version": "1.0.0",
-  "description": "Real-time multiplayer Mindi (Mendikot) card game — live players + bots, with save/resume",
+  "description": "Real-time multiplayer Mindi (Mendikot) card game - live players + bots, with save/resume",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

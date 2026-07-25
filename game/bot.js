@@ -1,4 +1,4 @@
-// Bot AI for Mindi — decent heuristics: protect tens, feed partner, cut for value.
+// Bot AI for Mindi - decent heuristics: protect tens, feed partner, cut for value.
 "use strict";
 
 const { trickWinner, legalCards, isTen } = require("./logic");
@@ -61,7 +61,7 @@ function botChooseCard(seat, game, config) {
 
   // Void of lead suit
   if (config.trumpMode === "cut" && !trumpSuit) {
-    // This play sets trump — cut with strength when the trick is worth it.
+    // This play sets trump - cut with strength when the trick is worth it.
     const counts = {};
     for (const c of hand) counts[c.suit] = (counts[c.suit] || 0) + 1;
     const longSuit = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
