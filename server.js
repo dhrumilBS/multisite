@@ -21,7 +21,7 @@ const io = new Server(server, { cors: { origin: ALLOWED_ORIGIN } });
 
 app.use(express.static(path.join(__dirname, "public")));
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3030;
 
 const SPEEDS = { relaxed: 1400, normal: 850, fast: 420 };
 const timers = new Map(); // code -> timeout

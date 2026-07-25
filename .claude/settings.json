@@ -5,7 +5,10 @@
       "Bash(node repro.js)",
       "Bash(node repro2.js)",
       "Bash(node trump_reveal2.js)",
-      "Bash(rm -f \"C:/Users/Dhrumil/AppData/Local/Temp/claude/d--lovable-multisite/9352e82b-a902-4b00-ba6c-b929b7aed7a9/scratchpad\"/*.png)"
+      "Bash(rm -f \"C:/Users/Dhrumil/AppData/Local/Temp/claude/d--lovable-multisite/9352e82b-a902-4b00-ba6c-b929b7aed7a9/scratchpad\"/*.png)",
+      "Bash(node verify_fixes.js)",
+      "Bash(node verify_anim.js)",
+      "Bash(rm -f \"C:/Users/Dhrumil/AppData/Local/Temp/claude/d--lovable-multisite/9352e82b-a902-4b00-ba6c-b929b7aed7a9/scratchpad\"/*.png \"C:/Users/Dhrumil/AppData/Local/Temp/claude/d--lovable-multisite/9352e82b-a902-4b00-ba6c-b929b7aed7a9/scratchpad\"/verify_*.js)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Dhrumil\\AppData\\Local\\Temp\\claude\\d--lovable-multisite\\9352e82b-a902-4b00-ba6c-b929b7aed7a9\\scratchpad"

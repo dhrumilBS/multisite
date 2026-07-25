@@ -28,6 +28,7 @@ let chatOpen = false;
 let seenChat = 0;
 let lastHandSeq = null; // used to fire the deal animation exactly once per new hand
 let pendingFlip = null; // { cardId, rect } captured just before emitting our own playCard
+let prevTrickCardIds = new Set(); // trick cards already on the table as of the last render, so re-renders don't replay their drop-in animation
 
 // ---------- sound effects ----------
 // Synthesized with the Web Audio API rather than external audio files, so
@@ -360,7 +361,7 @@ function renderLobby() {
 // wide desktops alike without any breakpoint-specific math.
 function seatAngle(seat, you, n) {
   const k = (seat - you + n) % n;
-  return (180 - k * (360 / n) + 360) % 360; // degrees, 0 = top, clockwise
+  return (180 + k * (360 / n)) % 360; // degrees, 0 = top, clockwise; turn order runs clockwise around the table
 }
 function seatPos(angleDeg, rx, ry) {
   const rad = (angleDeg * Math.PI) / 180;
@@ -445,18 +446,25 @@ function renderGame() {
   }
 
   // trick cards - each one rests biased toward its player's seat, so the
-  // table always reads as "this card came from that seat"
+  // table always reads as "this card came from that seat". The whole layer
+  // is rebuilt every render (trick can be re-rendered for unrelated state
+  // changes), so cards already on the table before this render skip the
+  // drop-in animation entirely - only the newly-played card gets it.
   const trickLayer = $("trickLayer");
   trickLayer.innerHTML = "";
+  const nextTrickCardIds = new Set();
   g.trick.forEach((t) => {
     const angle = seatAngle(t.seat, you, n);
     const pos = trickSlotPos(angle);
     const rad = (angle * Math.PI) / 180;
+    const isNew = !prevTrickCardIds.has(t.card.id);
+    nextTrickCardIds.add(t.card.id);
     const wrap = document.createElement("div");
     wrap.className = "trick-card";
     wrap.dataset.side = t.seat % 2 === myTeam ? "mine" : "opp";
     wrap.style.left = pos.x + "%";
     wrap.style.top = pos.y + "%";
+    if (!isNew) wrap.style.animation = "none";
     wrap.style.setProperty("--fx", Math.round(Math.sin(rad) * 90) + "px");
     wrap.style.setProperty("--fy", Math.round(-Math.cos(rad) * 90) + "px");
     wrap.innerHTML = cardHTML(t.card, "sm");
@@ -464,7 +472,7 @@ function renderGame() {
 
     // Our own just-played card gets a real FLIP from its old hand position
     // instead of the generic CSS slide-in used for everyone else's plays.
-    if (t.seat === you && pendingFlip && pendingFlip.cardId === t.card.id) {
+    if (isNew && t.seat === you && pendingFlip && pendingFlip.cardId === t.card.id) {
       const newRect = wrap.getBoundingClientRect();
       const oldRect = pendingFlip.rect;
       const dx = oldRect.left + oldRect.width / 2 - (newRect.left + newRect.width / 2);
@@ -481,6 +489,7 @@ function renderGame() {
       pendingFlip = null;
     }
   });
+  prevTrickCardIds = nextTrickCardIds;
 
   // status line
   let status;
