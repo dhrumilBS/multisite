@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>Mindi — Live Multiplayer</title>
+<link rel="stylesheet" href="style.css" />
+<script>
+  // Applied synchronously, before first paint, to avoid a flash of the
+  // default theme when a saved theme preference exists.
+  try {
+    var t = localStorage.getItem("mindi_theme");
+    if (t && t !== "classic") document.documentElement.dataset.theme = t;
+  } catch (e) {}
+</script>
+</head>
+<body>
+
+<!-- HOME -->
+<div id="screen-home" class="screen">
+  <div class="home-wrap">
+    <div class="brand">
+      <button id="btnThemeHome" class="tiny theme-fab" title="Theme">🎨</button>
+      <div class="brand-eyebrow">♠ ♥ live multiplayer ♦ ♣</div>
+      <h1>Mindi</h1>
+      <div class="brand-sub">Capture the tens. Beat the table. With real friends + bots.</div>
+    </div>
+
+    <div class="panel">
+      <label class="lbl">Your name</label>
+      <input id="playerName" class="txt" maxlength="16" placeholder="e.g. Rohan" />
+
+      <div class="tabs">
+        <button class="tab active" data-tab="create">Create room</button>
+        <button class="tab" data-tab="join">Join room</button>
+      </div>
+
+      <div id="tab-create" class="tabbody">
+        <label class="lbl">Players (teams alternate around the table)</label>
+        <div class="optrow" id="opt-players">
+          <button class="opt active" data-v="4">4 <small>2v2</small></button>
+          <button class="opt" data-v="6">6 <small>3v3</small></button>
+          <button class="opt" data-v="8">8 <small>4v4</small></button>
+        </div>
+
+        <button id="btnAdvancedToggle" type="button" class="advanced-toggle" aria-expanded="false">
+          Advanced options (decks, trump rule, speed) <span class="chev">▾</span>
+        </button>
+        <div id="advancedOpts" class="advanced-opts collapsed">
+          <label class="lbl">Decks</label>
+          <div class="optrow" id="opt-decks">
+            <button class="opt active" data-v="3">3 decks <small>12 tens · win 7+</small></button>
+            <button class="opt" data-v="4">4 decks <small>16 tens · win 9+</small></button>
+            <button class="opt" data-v="5">5 decks <small>20 tens · win 11+</small></button>
+          </div>
+          <label class="lbl">Trump rule</label>
+          <div class="optrow wrap" id="opt-trump">
+            <button class="opt active" data-v="cut">First cut <small>first off-suit sets trump</small></button>
+            <button class="opt" data-v="hidden">Hidden (Band) <small>secret, revealed on cut</small></button>
+            <button class="opt" data-v="random">Open random <small>flipped before play</small></button>
+            <button class="opt" data-v="none">No trump <small>katte</small></button>
+          </div>
+          <label class="lbl">Bot speed</label>
+          <div class="optrow" id="opt-speed">
+            <button class="opt" data-v="relaxed">Relaxed</button>
+            <button class="opt active" data-v="normal">Normal</button>
+            <button class="opt" data-v="fast">Fast</button>
+          </div>
+        </div>
+        <button id="btnCreate" class="gold">Create room</button>
+      </div>
+
+      <div id="tab-join" class="tabbody" style="display:none">
+        <label class="lbl">Room code</label>
+        <input id="joinCode" class="txt code" maxlength="6" placeholder="ABC123" autocapitalize="characters" />
+        <button id="btnJoin" class="gold">Join room</button>
+      </div>
+
+      <div id="resumeBox" style="display:none">
+        <label class="lbl">Resume a saved game</label>
+        <div id="resumeList"></div>
+      </div>
+      <div id="homeErr" class="err"></div>
+    </div>
+  </div>
+</div>
+
+<!-- LOBBY -->
+<div id="screen-lobby" class="screen" style="display:none">
+  <div class="home-wrap">
+    <div class="panel">
+      <div class="lobby-head">
+        <div>
+          <div class="lbl">Room code — share with friends</div>
+          <div class="roomcode" id="lobbyCode">------</div>
+        </div>
+        <div class="head-actions">
+          <button id="btnCopyCode" class="tiny">Copy code</button>
+          <button id="btnCopyLink" class="tiny">Copy invite link</button>
+        </div>
+      </div>
+      <div id="lobbyCfg" class="lobby-cfg"></div>
+      <div id="lobbyPending" class="lobby-pending" style="display:none">
+        <div class="lbl">Join requests</div>
+        <div id="pendingList"></div>
+      </div>
+      <div class="lbl" style="margin-top:14px">Seats <small style="color:#8fb5ac">(green = your team, red = opponents · host can fill empty seats with bots)</small></div>
+      <div id="lobbySeats" class="lobby-seats"></div>
+      <button id="btnStart" class="gold" style="margin-top:16px">Start game (empty seats become bots)</button>
+      <div id="lobbyWait" class="wait-note" style="display:none">Waiting for the host to start…</div>
+      <button id="btnLeaveLobby" class="dark" style="margin-top:8px">Leave</button>
+      <div id="lobbyErr" class="err"></div>
+    </div>
+  </div>
+</div>
+
+<!-- PENDING (waiting for host approval to join) -->
+<div id="screen-pending" class="screen" style="display:none">
+  <div class="home-wrap">
+    <div class="panel small center">
+      <div class="spinner"></div>
+      <h2>Waiting for the host</h2>
+      <p class="muted">Room <b id="pendingCode">------</b> — the host needs to let you in.</p>
+      <button id="btnCancelPending" class="dark" style="margin-top:14px">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- GAME -->
+<div id="screen-game" class="screen" style="display:none">
+  <div class="topbar">
+    <div class="logo">Mindi <span id="gameMeta"></span></div>
+    <div class="badges">
+      <div class="badge"><span class="badge-l">Trump</span><span id="bTrump">—</span></div>
+      <div class="badge"><span class="badge-l">Tens</span><span id="bTens">0:0</span></div>
+      <div class="badge"><span class="badge-l">Match</span><span id="bMatch">0:0</span></div>
+      <button id="btnLastTrick" class="tiny" style="display:none">Last trick</button>
+      <button id="btnChat" class="tiny">Chat <span id="chatDot" class="dot" style="display:none"></span></button>
+      <button id="btnThemeGame" class="tiny" title="Theme">🎨</button>
+      <button id="btnSaveExit" class="tiny">Save &amp; exit</button>
+    </div>
+  </div>
+
+  <div class="table-area" id="tableArea">
+    <div class="seat-col seat-col-opp" id="seatsOpp"></div>
+    <div class="table-center">
+      <div class="felt"></div>
+      <div class="felt-text">MINDI</div>
+      <div id="trickLayer"></div>
+      <div class="status" id="statusLine"></div>
+    </div>
+    <div class="seat-col seat-col-mine" id="seatsMine"></div>
+  </div>
+
+  <div class="hand-area">
+    <div id="handRow" class="hand-row"></div>
+  </div>
+
+  <!-- overlays -->
+  <div id="ovTrump" class="overlay" style="display:none">
+    <div class="panel small">
+      <h2>Choose the hidden trump</h2>
+      <p class="muted">You lead this hand — pick a suit secretly. It reveals the first time anyone can't follow suit.</p>
+      <div class="suitrow">
+        <button class="suitbtn" data-s="S">♠</button>
+        <button class="suitbtn red" data-s="H">♥</button>
+        <button class="suitbtn red" data-s="D">♦</button>
+        <button class="suitbtn" data-s="C">♣</button>
+      </div>
+      <div id="trumpHint" class="muted center"></div>
+    </div>
+  </div>
+
+  <div id="ovPaused" class="overlay" style="display:none">
+    <div class="panel small center">
+      <h2>Game paused</h2>
+      <p class="muted" id="pausedWho"></p>
+      <p class="muted">Progress is saved. They can rejoin with the room code any time — or the host can hand their seat to a bot.</p>
+      <div id="pausedActions"></div>
+    </div>
+  </div>
+
+  <div id="ovHandEnd" class="overlay" style="display:none">
+    <div class="panel small">
+      <h2 id="heTitle" class="center"></h2>
+      <p id="heReason" class="center gold-text"></p>
+      <div class="he-teams" id="heTeams"></div>
+      <div class="center muted" id="heMatch"></div>
+      <div class="btnrow">
+        <button id="btnNextHand" class="gold">Next hand</button>
+        <button id="btnEndRoom" class="dark">End room</button>
+      </div>
+      <div id="heWait" class="wait-note" style="display:none">Waiting for the host to deal…</div>
+    </div>
+  </div>
+
+  <div id="ovMatchEnd" class="overlay" style="display:none">
+    <div class="panel small">
+      <h2 id="meTitle" class="center"></h2>
+      <p id="meScore" class="center gold-text"></p>
+      <p class="muted center">The room has closed — thanks for playing!</p>
+      <button id="btnMatchHome" class="gold" style="margin-top:14px">Back to home</button>
+    </div>
+  </div>
+
+  <div id="ovLastTrick" class="overlay" style="display:none">
+    <div class="panel small">
+      <h3 id="ltTitle" class="center"></h3>
+      <div id="ltCards" class="lt-cards"></div>
+      <button id="btnCloseLT" class="dark">Close</button>
+    </div>
+  </div>
+
+  <div id="chatPanel" class="chat-panel" style="display:none">
+    <div class="chat-head">Table chat <button id="btnCloseChat" class="tiny">×</button></div>
+    <div id="chatMsgs" class="chat-msgs"></div>
+    <div class="chat-input">
+      <input id="chatText" class="txt" maxlength="200" placeholder="Say something…" />
+      <button id="btnSendChat" class="tiny">Send</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" style="display:none"></div>
+
+  <div id="ovTrumpReveal" class="trump-reveal-overlay" style="display:none">
+    <div class="trump-reveal-card" id="trumpRevealCard"></div>
+    <div class="trump-reveal-label" id="trumpRevealLabel"></div>
+  </div>
+</div>
+
+<!-- THEME PICKER (reachable from home screen and in-game topbar) -->
+<div id="ovTheme" class="overlay" style="display:none">
+  <div class="panel small">
+    <h2>Choose a theme</h2>
+    <div class="theme-grid" id="themeGrid"></div>
+    <button id="btnCloseTheme" class="dark">Close</button>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="client.js"></script>
+</body>
+</html>
