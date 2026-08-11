@@ -1,5 +1,8 @@
-// Mindi multiplayer server - Express + Socket.IO, authoritative game state,
+// Multi-game server - Express + Socket.IO, authoritative game state,
 // bots for empty seats, pause on disconnect, save/resume from disk.
+// Mindi (game/rooms.js) and Teen Patti (game/teenpatti/rooms.js) share the
+// generic room shell (game/common/roomShell.js) but keep their own phase
+// machines, bot AI, and pump/bot-pacing loops.
 "use strict";
 
 const path = require("path");
@@ -7,8 +10,18 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 
+const Shell = require("./game/common/roomShell");
+const Wallet = require("./game/wallet");
 const R = require("./game/rooms");
+const TeenPatti = require("./game/teenpatti/rooms");
 const { botChooseCard, botChooseTrump } = require("./game/bot");
+
+const GAMES = { mindi: R, teenpatti: TeenPatti };
+function gameFor(room) {
+  return GAMES[room.config.gameType] || GAMES.mindi;
+}
+
+Wallet.init();
 
 const app = express();
 const server = http.createServer(app);
@@ -46,7 +59,8 @@ const chatLimiter = makeLimiter(5, 5000);
 const createRoomLimiter = makeLimiter(3, 60000);
 const requestJoinLimiter = makeLimiter(10, 10000);
 const playCardLimiter = makeLimiter(20, 5000);
-const LIMITERS = [chatLimiter, createRoomLimiter, requestJoinLimiter, playCardLimiter];
+const tpActionLimiter = makeLimiter(20, 5000);
+const LIMITERS = [chatLimiter, createRoomLimiter, requestJoinLimiter, playCardLimiter, tpActionLimiter];
 
 function clearRoomTimer(code) {
   if (timers.has(code)) {
@@ -62,9 +76,10 @@ function setRoomTimer(code, fn, ms) {
 
 // Send each connected player their own redacted view
 function broadcast(room, extra) {
+  const mod = gameFor(room);
   for (const [sid, sock] of io.sockets.sockets) {
     if (sock.data.roomCode === room.code && sock.data.seat != null) {
-      sock.emit("state", { ...R.viewFor(room, sock.data.seat), ...(extra || {}) });
+      sock.emit("state", { ...mod.viewFor(room, sock.data.seat), ...(extra || {}) });
     }
   }
 }
@@ -74,7 +89,7 @@ function speedOf(room) {
 }
 
 // Drive the game forward: bot trump choice, hidden reveal, bot turns, trick resolution.
-function pump(room) {
+function pumpMindi(room) {
   clearRoomTimer(room.code);
   if (!room.game) return;
   if (room.paused) {
@@ -116,7 +131,7 @@ function pump(room) {
         return;
       }
       if (!handOver) {
-        setRoomTimer(room.code, () => pump(room), 250);
+        setRoomTimer(room.code, () => pumpMindi(room), 250);
       }
     }, speedOf(room) + 500);
     return;
@@ -134,23 +149,40 @@ function pump(room) {
       if (room.paused || room.phase !== "playing") return;
       const card = botChooseCard(g.turnSeat, g, room.config);
       const res = R.playCard(room, g.turnSeat, card.id);
-      if (res.ok) pump(room);
+      if (res.ok) pumpMindi(room);
     }, speedOf(room));
   }
   broadcast(room);
+}
+
+function pump(room) {
+  if ((room.config.gameType || "mindi") !== "mindi") {
+    const ctx = {
+      broadcast: (extra) => broadcast(room, extra),
+      setTimer: (fn, ms) => setRoomTimer(room.code, fn, ms),
+      clearTimer: () => clearRoomTimer(room.code),
+      deleteRoom: () => Shell.deleteRoom(room.code),
+    };
+    return GAMES[room.config.gameType].pump(room, ctx);
+  }
+  return pumpMindi(room);
 }
 
 io.on("connection", (socket) => {
   socket.data.roomCode = null;
   socket.data.seat = null;
 
-  socket.on("createRoom", ({ name, config }, cb) => {
+  socket.on("createRoom", ({ name, config, playerId }, cb) => {
     if (!createRoomLimiter.allow(socket.id)) return cb && cb({ error: "Too many requests, slow down." });
     try {
-      const { room, token, seat } = R.createRoom(name, config || {});
+      const gameType = config && GAMES[config.gameType] ? config.gameType : "mindi";
+      const mod = GAMES[gameType];
+      const res = mod.createRoom(name, config || {}, playerId);
+      if (res.error) return cb && cb({ error: res.error });
+      const { room, token, seat } = res;
       socket.data.roomCode = room.code;
       socket.data.seat = seat;
-      cb({ ok: true, code: room.code, token, seat, state: R.viewFor(room, seat) });
+      cb({ ok: true, code: room.code, token, seat, state: mod.viewFor(room, seat) });
     } catch (e) {
       cb({ error: "Could not create room." });
     }
@@ -159,9 +191,9 @@ io.on("connection", (socket) => {
   // Joining is a two-step request/approve flow: the requester is parked in
   // the room's pendingJoins list (visible only to the host) until the host
   // approves (seats them, pushes `joinApproved`) or rejects (`joinRejected`).
-  socket.on("requestJoin", ({ code, name }, cb) => {
+  socket.on("requestJoin", ({ code, name, playerId }, cb) => {
     if (!requestJoinLimiter.allow(socket.id)) return cb && cb({ error: "Too many requests, slow down." });
-    const res = R.requestJoinRoom(code, name, socket.id);
+    const res = Shell.requestJoinRoom(code, name, socket.id, playerId);
     if (res.error) return cb && cb(res);
     socket.data.roomCode = res.room.code;
     socket.data.pendingReqId = res.reqId;
@@ -172,7 +204,7 @@ io.on("connection", (socket) => {
   socket.on("cancelJoinRequest", (_, cb) => {
     const room = getRoom();
     if (room && socket.data.pendingReqId) {
-      R.rejectJoinRequest(room, socket.data.pendingReqId);
+      Shell.rejectJoinRequest(room, socket.data.pendingReqId);
       broadcast(room);
     }
     socket.data.pendingReqId = null;
@@ -184,7 +216,8 @@ io.on("connection", (socket) => {
     const room = getRoom();
     if (!room) return cb && cb({ error: "No room." });
     if (!isHost(room)) return cb && cb({ error: "Only the host can approve joins." });
-    const res = R.approveJoinRequest(room, reqId);
+    const mod = gameFor(room);
+    const res = mod.approveJoinRequest(room, reqId);
     if (res.error) return cb && cb(res);
     const targetSock = io.sockets.sockets.get(res.socketId);
     if (targetSock) {
@@ -196,7 +229,7 @@ io.on("connection", (socket) => {
         code: room.code,
         token: res.token,
         seat: res.seat,
-        state: R.viewFor(room, res.seat),
+        state: mod.viewFor(room, res.seat),
       });
     }
     broadcast(room);
@@ -207,7 +240,7 @@ io.on("connection", (socket) => {
     const room = getRoom();
     if (!room) return cb && cb({ error: "No room." });
     if (!isHost(room)) return cb && cb({ error: "Only the host can reject joins." });
-    const res = R.rejectJoinRequest(room, reqId);
+    const res = Shell.rejectJoinRequest(room, reqId);
     if (res.error) return cb && cb(res);
     const targetSock = io.sockets.sockets.get(res.socketId);
     if (targetSock) {
@@ -219,18 +252,19 @@ io.on("connection", (socket) => {
   });
 
   socket.on("rejoin", ({ code, token }, cb) => {
-    const res = R.rejoinRoom(code, token);
+    const res = Shell.rejoinRoom(code, token);
     if (res.error) return cb(res);
     socket.data.roomCode = res.room.code;
     socket.data.seat = res.seat;
-    cb({ ok: true, code: res.room.code, seat: res.seat, state: R.viewFor(res.room, res.seat) });
+    const mod = gameFor(res.room);
+    cb({ ok: true, code: res.room.code, seat: res.seat, state: mod.viewFor(res.room, res.seat) });
     broadcast(res.room);
     if (!res.room.paused) pump(res.room);
   });
 
   function getRoom() {
     if (!socket.data.roomCode) return null;
-    return R.loadRoom(socket.data.roomCode);
+    return Shell.loadRoom(socket.data.roomCode);
   }
   function isHost(room) {
     const s = room.seats[socket.data.seat];
@@ -245,7 +279,7 @@ io.on("connection", (socket) => {
       return cb && cb({ error: "Invalid seat." });
     if (room.seats[seat] && room.seats[seat].name && room.seats[seat].connected && !room.seats[seat].isBot)
       return cb && cb({ error: "Seat is occupied by a connected player." });
-    R.botifySeat(room, seat);
+    gameFor(room).botifySeat(room, seat);
     broadcast(room);
     pump(room);
     cb && cb({ ok: true });
@@ -265,8 +299,13 @@ io.on("connection", (socket) => {
       }
     }
     room.pendingJoins = [];
-    R.fillWithBots(room);
-    R.startHand(room, Math.floor(Math.random() * room.config.players), false);
+    const mod = gameFor(room);
+    mod.fillWithBots(room);
+    if (room.config.gameType === "teenpatti") {
+      mod.startFirstHand(room);
+    } else {
+      mod.startHand(room, Math.floor(Math.random() * room.config.players), false);
+    }
     broadcast(room);
     pump(room);
     cb && cb({ ok: true });
@@ -303,15 +342,34 @@ io.on("connection", (socket) => {
     cb && cb({ ok: true });
   });
 
+  // Single namespaced event for every Teen Patti betting action (seeCards,
+  // placeBet, raise, pack, show, requestSideShow, respondSideShow, nextHand)
+  // so the action set can grow without adding a new socket handler each time.
+  socket.on("tpAction", ({ action, payload }, cb) => {
+    if (!tpActionLimiter.allow(socket.id)) return cb && cb({ error: "Slow down." });
+    const room = getRoom();
+    if (!room) return cb && cb({ error: "No room." });
+    if (room.config.gameType !== "teenpatti") return cb && cb({ error: "Not a Teen Patti room." });
+    const handler = TeenPatti.actions[action];
+    if (!handler) return cb && cb({ error: "Unknown action." });
+    const res = handler(room, socket.data.seat, payload || {});
+    if (res.error) return cb && cb(res);
+    broadcast(room);
+    pump(room);
+    cb && cb({ ok: true });
+  });
+
+  socket.on("walletBalance", ({ playerId }, cb) => {
+    if (!playerId) return cb && cb({ balance: 0 });
+    cb && cb({ balance: Wallet.getBalance(playerId) });
+  });
+
   socket.on("chat", ({ text }) => {
     if (!chatLimiter.allow(socket.id)) return;
     const room = getRoom();
     if (!room || socket.data.seat == null) return;
     const name = room.seats[socket.data.seat] ? room.seats[socket.data.seat].name : "?";
-    const msg = { name, text: String(text || "").slice(0, 200), at: Date.now() };
-    room.chat.push(msg);
-    if (room.chat.length > 100) room.chat = room.chat.slice(-100);
-    R.saveRoom(room);
+    Shell.postChat(room, name, text);
     broadcast(room);
   });
 
@@ -319,7 +377,7 @@ io.on("connection", (socket) => {
   socket.on("saveExit", (_, cb) => {
     const room = getRoom();
     if (room) {
-      R.markDisconnected(room, socket.data.seat);
+      gameFor(room).markDisconnected(room, socket.data.seat);
       clearRoomTimer(room.code);
       broadcast(room);
     }
@@ -334,8 +392,9 @@ io.on("connection", (socket) => {
     if (!room) return cb && cb({ error: "No room." });
     if (!isHost(room)) return cb && cb({ error: "Only the host can end the room." });
     clearRoomTimer(room.code);
+    if (room.config.gameType === "teenpatti") TeenPatti.settleAndClose(room);
     broadcast(room, { roomEnded: true });
-    R.deleteRoom(room.code);
+    Shell.deleteRoom(room.code);
     cb && cb({ ok: true });
   });
 
@@ -343,10 +402,10 @@ io.on("connection", (socket) => {
     for (const limiter of LIMITERS) limiter.forget(socket.id);
     const code = socket.data.roomCode;
     if (!code) return;
-    const room = R.loadRoom(code);
+    const room = Shell.loadRoom(code);
     if (!room) return;
     if (socket.data.pendingReqId) {
-      R.rejectJoinRequest(room, socket.data.pendingReqId);
+      Shell.rejectJoinRequest(room, socket.data.pendingReqId);
       broadcast(room);
       return;
     }
@@ -355,7 +414,7 @@ io.on("connection", (socket) => {
       (s) => s !== socket && s.data.roomCode === code && s.data.seat === socket.data.seat
     );
     if (!stillHere) {
-      R.markDisconnected(room, socket.data.seat);
+      gameFor(room).markDisconnected(room, socket.data.seat);
       if (room.paused) clearRoomTimer(code);
       broadcast(room);
     }
@@ -364,8 +423,8 @@ io.on("connection", (socket) => {
 
 server.listen(PORT, () => {
   console.log("");
-  console.log("  Mindi multiplayer server running!");
+  console.log("  Multiplayer game server running!");
   console.log("  Local:   http://localhost:" + PORT);
-  console.log("  Saved rooms on disk: " + R.listSavedRooms().join(", ") || "none");
+  console.log("  Saved rooms on disk: " + Shell.listSavedRooms().join(", ") || "none");
   console.log("");
 });

@@ -1,9 +1,11 @@
-// Room lifecycle, authoritative game state, save/load persistence, per-player views.
+// Mindi room lifecycle, authoritative game state, and per-player views.
+// Generic room-shell concerns (seats, join/approve/reject, reconnect tokens,
+// disk persistence) live in ./common/roomShell and are re-exported here
+// unchanged so existing callers (server.js, test/*.js) keep working exactly
+// as before.
 "use strict";
 
-const fs = require("fs");
-const path = require("path");
-const crypto = require("crypto");
+const Shell = require("./common/roomShell");
 const {
   buildDeck,
   shuffle,
@@ -16,189 +18,41 @@ const {
 } = require("./logic");
 const { botChooseTrump } = require("./bot");
 
-const SAVE_DIR = path.join(__dirname, "..", "saves");
-if (!fs.existsSync(SAVE_DIR)) fs.mkdirSync(SAVE_DIR, { recursive: true });
+Shell.registerGameType("mindi", { pausablePhases: ["playing", "trumpSelect"] });
 
-const rooms = new Map(); // code -> room
-
-const BOT_NAMES = ["Arjun", "Priya", "Kabir", "Meera", "Ravi", "Anaya", "Dev", "Isha"];
-
-// Exact charset makeCode() draws from - also used to validate any client-
-// supplied code before it ever touches the filesystem (see loadRoom below).
-const CODE_CHARSET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const CODE_RE = new RegExp(`^[${CODE_CHARSET}]{6}$`);
-
-function makeCode() {
-  let code = "";
-  for (let i = 0; i < 6; i++) code += CODE_CHARSET[Math.floor(Math.random() * CODE_CHARSET.length)];
-  return rooms.has(code) || fs.existsSync(savePath(code)) ? makeCode() : code;
-}
-
-function savePath(code) {
-  if (!CODE_RE.test(code)) throw new Error("Invalid room code");
-  return path.join(SAVE_DIR, code + ".json");
-}
-
-function saveRoom(room) {
-  try {
-    const data = { ...room };
-    const dest = savePath(room.code);
-    const tmp = dest + ".tmp";
-    fs.writeFileSync(tmp, JSON.stringify(data), "utf8");
-    fs.renameSync(tmp, dest);
-  } catch (e) {
-    console.error("Save failed for room", room.code, e.message);
-  }
-}
-
-function loadRoom(code) {
-  code = String(code || "").toUpperCase().trim();
-  if (!CODE_RE.test(code)) return null; // reject before any filesystem access
-  if (rooms.has(code)) return rooms.get(code);
-  try {
-    const raw = fs.readFileSync(savePath(code), "utf8");
-    const room = JSON.parse(raw);
-    // Everyone is disconnected after a restart
-    for (const s of room.seats) if (!s.isBot) s.connected = false;
-    if (room.phase === "playing" || room.phase === "trumpSelect") room.paused = true;
-    if (!room.pendingJoins) room.pendingJoins = [];
-    if (room.matchResult === undefined) room.matchResult = null;
-    rooms.set(code, room);
-    return room;
-  } catch (e) {
-    if (e.code !== "ENOENT") console.error("Load failed for room", code, e.message);
-    return null;
-  }
-}
-
-function deleteRoom(code) {
-  rooms.delete(code);
-  try {
-    if (fs.existsSync(savePath(code))) fs.unlinkSync(savePath(code));
-  } catch (e) {}
-}
-
-function listSavedRooms() {
-  try {
-    return fs
-      .readdirSync(SAVE_DIR)
-      .filter((f) => f.endsWith(".json"))
-      .map((f) => f.replace(".json", ""));
-  } catch (e) {
-    return [];
-  }
-}
+const rooms = Shell.rooms;
 
 // ---------- Room creation / joining ----------
 function createRoom(hostName, config) {
-  const code = makeCode();
-  const token = crypto.randomUUID();
-  const seats = [];
-  for (let i = 0; i < config.players; i++) {
-    seats.push({ name: null, token: null, isBot: false, connected: false });
-  }
-  seats[0] = { name: cleanName(hostName), token, isBot: false, connected: true };
-  const room = {
-    code,
-    config: {
-      players: [4, 6, 8].includes(config.players) ? config.players : 4,
-      decks: [3, 4, 5].includes(config.decks) ? config.decks : 3,
-      trumpMode: ["cut", "hidden", "random", "none"].includes(config.trumpMode)
-        ? config.trumpMode
-        : "cut",
-      speed: ["relaxed", "normal", "fast"].includes(config.speed) ? config.speed : "normal",
-    },
-    hostToken: token,
-    seats,
-    phase: "lobby", // lobby | trumpSelect | playing | handEnd | matchEnd
-    paused: false,
-    game: null,
-    matchScore: { 0: 0, 1: 0 },
-    matchResult: null,
-    pendingJoins: [],
-    chat: [],
-    createdAt: Date.now(),
-  };
-  rooms.set(code, room);
-  saveRoom(room);
-  return { room, token, seat: 0 };
+  const players = Shell.clampChoice(config.players, [4, 6, 8], 4);
+  const decks = Shell.clampChoice(config.decks, [3, 4, 5], 3);
+  const trumpMode = Shell.clampChoice(config.trumpMode, ["cut", "hidden", "random", "none"], "cut");
+  const speed = Shell.clampChoice(config.speed, ["relaxed", "normal", "fast"], "normal");
+  const { room, token, seat } = Shell.createRoomShell(hostName, "mindi", players, { decks, trumpMode, speed });
+  room.matchScore = { 0: 0, 1: 0 };
+  room.matchResult = null;
+  Shell.saveRoom(room);
+  return { room, token, seat };
 }
 
-function cleanName(name) {
-  return String(name || "Player").trim().slice(0, 16) || "Player";
-}
-
-// Joining is a two-step flow: a request is queued (visible only to the host
-// via viewFor's pendingJoins), and only approveJoinRequest actually seats the
-// player. This replaces the old instant-join behavior.
-function requestJoinRoom(code, name, socketId) {
-  const room = loadRoom(code);
-  if (!room) return { error: "Room not found. Check the code." };
-  if (room.phase !== "lobby") return { error: "Game already started. Ask for a rejoin link or wait for the next game." };
-  const openSeats = room.seats.filter((s) => !s.name && !s.isBot).length;
-  if (openSeats <= room.pendingJoins.length) return { error: "Room is full." };
-  if (room.pendingJoins.length >= 50) return { error: "Too many pending requests, try again shortly." };
-  const reqId = crypto.randomUUID();
-  room.pendingJoins.push({ reqId, name: cleanName(name), socketId, requestedAt: Date.now() });
-  saveRoom(room);
-  return { room, reqId };
-}
-
-function approveJoinRequest(room, reqId) {
-  const idx = room.pendingJoins.findIndex((p) => p.reqId === reqId);
-  if (idx === -1) return { error: "Request not found (it may have expired)." };
-  if (room.phase !== "lobby") return { error: "Game already started." };
-  const seatIdx = room.seats.findIndex((s) => !s.name && !s.isBot);
-  if (seatIdx === -1) return { error: "Room is full." };
-  const entry = room.pendingJoins[idx];
-  const token = crypto.randomUUID();
-  room.seats[seatIdx] = { name: entry.name, token, isBot: false, connected: true };
-  room.pendingJoins.splice(idx, 1);
-  saveRoom(room);
-  return { room, seat: seatIdx, token, socketId: entry.socketId };
-}
-
-function rejectJoinRequest(room, reqId) {
-  const idx = room.pendingJoins.findIndex((p) => p.reqId === reqId);
-  if (idx === -1) return { error: "Request not found." };
-  const entry = room.pendingJoins[idx];
-  room.pendingJoins.splice(idx, 1);
-  saveRoom(room);
-  return { room, socketId: entry.socketId };
-}
-
-function rejoinRoom(code, token) {
-  const room = loadRoom(code);
-  if (!room) return { error: "Room not found or expired." };
-  const seatIdx = room.seats.findIndex((s) => s.token === token);
-  if (seatIdx === -1) return { error: "You are not a member of this room." };
-  room.seats[seatIdx].connected = true;
-  maybeResume(room);
-  saveRoom(room);
-  return { room, seat: seatIdx };
+function loadRoom(code) {
+  const room = Shell.loadRoom(code);
+  if (room && room.matchResult === undefined) room.matchResult = null;
+  return room;
 }
 
 function markDisconnected(room, seat) {
-  if (!room.seats[seat] || room.seats[seat].isBot) return;
-  room.seats[seat].connected = false;
-  if (room.phase === "playing" || room.phase === "trumpSelect") {
-    room.paused = true;
-  }
-  saveRoom(room);
+  Shell.setDisconnected(room, seat);
 }
 
 function maybeResume(room) {
-  const anyHumanOffline = room.seats.some((s) => !s.isBot && s.name && !s.connected);
-  if (!anyHumanOffline && room.paused) room.paused = false;
+  Shell.maybeResume(room);
 }
 
 function botifySeat(room, seat) {
-  // Replace an absent player (or empty seat) with a bot
-  const used = new Set(room.seats.map((s) => s.name));
-  const botName = BOT_NAMES.find((n) => !used.has(n)) || "Bot" + seat;
-  room.seats[seat] = { name: botName, token: null, isBot: true, connected: true };
-  maybeResume(room);
-  saveRoom(room);
+  Shell.botifySeat(room, seat, Shell.BOT_NAMES);
+  Shell.maybeResume(room);
+  Shell.saveRoom(room);
 }
 
 function fillWithBots(room) {
@@ -251,7 +105,7 @@ function startHand(room, dealer, carryScore) {
     chooser,
   };
   room.phase = phase;
-  saveRoom(room);
+  Shell.saveRoom(room);
 }
 
 function chooseTrump(room, seat, suit) {
@@ -260,7 +114,7 @@ function chooseTrump(room, seat, suit) {
   if (!["S", "H", "D", "C"].includes(suit)) return { error: "Invalid suit." };
   room.game.trumpSuit = suit;
   room.phase = "playing";
-  saveRoom(room);
+  Shell.saveRoom(room);
   return { ok: true };
 }
 
@@ -277,7 +131,7 @@ function checkTrumpReveal(room) {
     const leadSuit = g.trick[0].card.suit;
     if (!hand.some((c) => c.suit === leadSuit)) {
       g.trumpRevealed = true;
-      saveRoom(room);
+      Shell.saveRoom(room);
       return true;
     }
   }
@@ -306,7 +160,7 @@ function playCard(room, seat, cardId) {
   g.hands[seat] = hand.filter((c) => c.id !== cardId);
   g.trick.push({ seat, card });
   g.turnSeat = (seat + 1) % room.config.players;
-  saveRoom(room);
+  Shell.saveRoom(room);
   return { ok: true, trickComplete: g.trick.length === room.config.players };
 }
 
@@ -338,7 +192,7 @@ function resolveTrick(room) {
       room.phase = "handEnd";
     }
   }
-  saveRoom(room);
+  Shell.saveRoom(room);
   return { winner, handOver };
 }
 
@@ -413,14 +267,14 @@ function viewFor(room, seat) {
 module.exports = {
   rooms,
   createRoom,
-  requestJoinRoom,
-  approveJoinRequest,
-  rejectJoinRequest,
-  rejoinRoom,
+  requestJoinRoom: Shell.requestJoinRoom,
+  approveJoinRequest: Shell.approveJoinRequest,
+  rejectJoinRequest: Shell.rejectJoinRequest,
+  rejoinRoom: Shell.rejoinRoom,
   loadRoom,
-  deleteRoom,
-  listSavedRooms,
-  saveRoom,
+  deleteRoom: Shell.deleteRoom,
+  listSavedRooms: Shell.listSavedRooms,
+  saveRoom: Shell.saveRoom,
   markDisconnected,
   maybeResume,
   botifySeat,

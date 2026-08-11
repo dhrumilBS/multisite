@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-<title>Mindi - Live Multiplayer</title>
+<title>Mindi &amp; Teen Patti - Live Multiplayer</title>
 <link rel="stylesheet" href="style.css" />
 <script>
   // Applied synchronously, before first paint, to avoid a flash of the
@@ -22,8 +22,8 @@
     <div class="brand">
       <button id="btnThemeHome" class="tiny theme-fab" title="Theme">🎨</button>
       <div class="brand-eyebrow">♠ ♥ live multiplayer ♦ ♣</div>
-      <h1>Mindi</h1>
-      <div class="brand-sub">Capture the tens. Beat the table. With real friends + bots.</div>
+      <h1 id="brandTitle">Mindi</h1>
+      <div class="brand-sub" id="brandSub">Capture the tens. Beat the table. With real friends + bots.</div>
     </div>
 
     <div class="panel">
@@ -36,37 +36,81 @@
       </div>
 
       <div id="tab-create" class="tabbody">
-        <label class="lbl">Players (teams alternate around the table)</label>
-        <div class="optrow" id="opt-players">
-          <button class="opt active" data-v="4">4 <small>2v2</small></button>
-          <button class="opt" data-v="6">6 <small>3v3</small></button>
-          <button class="opt" data-v="8">8 <small>4v4</small></button>
+        <label class="lbl">Game</label>
+        <div class="optrow" id="opt-game">
+          <button class="opt active" data-v="mindi">Mindi</button>
+          <button class="opt" data-v="teenpatti">Teen Patti</button>
         </div>
 
-        <button id="btnAdvancedToggle" type="button" class="advanced-toggle" aria-expanded="false">
-          Advanced options (decks, trump rule, speed) <span class="chev">▾</span>
-        </button>
-        <div id="advancedOpts" class="advanced-opts collapsed">
-          <label class="lbl">Decks</label>
-          <div class="optrow" id="opt-decks">
-            <button class="opt active" data-v="3">3 decks <small>12 tens · win 7+</small></button>
-            <button class="opt" data-v="4">4 decks <small>16 tens · win 9+</small></button>
-            <button class="opt" data-v="5">5 decks <small>20 tens · win 11+</small></button>
+        <div id="mindiOpts">
+          <label class="lbl">Players (teams alternate around the table)</label>
+          <div class="optrow" id="opt-players">
+            <button class="opt active" data-v="4">4 <small>2v2</small></button>
+            <button class="opt" data-v="6">6 <small>3v3</small></button>
+            <button class="opt" data-v="8">8 <small>4v4</small></button>
           </div>
-          <label class="lbl">Trump rule</label>
-          <div class="optrow wrap" id="opt-trump">
-            <button class="opt active" data-v="cut">First cut <small>first off-suit sets trump</small></button>
-            <button class="opt" data-v="hidden">Hidden (Band) <small>secret, revealed on cut</small></button>
-            <button class="opt" data-v="random">Open random <small>flipped before play</small></button>
-            <button class="opt" data-v="none">No trump <small>katte</small></button>
-          </div>
-          <label class="lbl">Bot speed</label>
-          <div class="optrow" id="opt-speed">
-            <button class="opt" data-v="relaxed">Relaxed</button>
-            <button class="opt active" data-v="normal">Normal</button>
-            <button class="opt" data-v="fast">Fast</button>
+
+          <button id="btnAdvancedToggle" type="button" class="advanced-toggle" aria-expanded="false">
+            Advanced options (decks, trump rule, speed) <span class="chev">▾</span>
+          </button>
+          <div id="advancedOpts" class="advanced-opts collapsed">
+            <label class="lbl">Decks</label>
+            <div class="optrow" id="opt-decks">
+              <button class="opt active" data-v="3">3 decks <small>12 tens · win 7+</small></button>
+              <button class="opt" data-v="4">4 decks <small>16 tens · win 9+</small></button>
+              <button class="opt" data-v="5">5 decks <small>20 tens · win 11+</small></button>
+            </div>
+            <label class="lbl">Trump rule</label>
+            <div class="optrow wrap" id="opt-trump">
+              <button class="opt active" data-v="cut">First cut <small>first off-suit sets trump</small></button>
+              <button class="opt" data-v="hidden">Hidden (Band) <small>secret, revealed on cut</small></button>
+              <button class="opt" data-v="random">Open random <small>flipped before play</small></button>
+              <button class="opt" data-v="none">No trump <small>katte</small></button>
+            </div>
+            <label class="lbl">Bot speed</label>
+            <div class="optrow" id="opt-speed">
+              <button class="opt" data-v="relaxed">Relaxed</button>
+              <button class="opt active" data-v="normal">Normal</button>
+              <button class="opt" data-v="fast">Fast</button>
+            </div>
           </div>
         </div>
+
+        <div id="tpOpts" style="display:none">
+          <label class="lbl">Players</label>
+          <div class="optrow" id="opt-tp-players">
+            <button class="opt" data-v="3">3</button>
+            <button class="opt" data-v="4">4</button>
+            <button class="opt active" data-v="5">5</button>
+            <button class="opt" data-v="6">6</button>
+            <button class="opt" data-v="7">7</button>
+          </div>
+
+          <button id="btnTpAdvancedToggle" type="button" class="advanced-toggle" aria-expanded="false">
+            Advanced options (variant, boot, buy-in, speed) <span class="chev">▾</span>
+          </button>
+          <div id="tpAdvancedOpts" class="advanced-opts collapsed">
+            <label class="lbl">Variant</label>
+            <div class="optrow wrap" id="opt-tp-variant">
+              <button class="opt active" data-v="classic">Classic</button>
+              <button class="opt" data-v="muflis">Muflis <small>lowest hand wins</small></button>
+              <button class="opt" data-v="ak47">AK47 <small>A, K, 4, 7 wild</small></button>
+              <button class="opt" data-v="joker">Joker <small>wild joker added</small></button>
+            </div>
+            <label class="lbl">Boot amount (ante)</label>
+            <input id="tpBoot" class="txt" type="number" min="1" max="1000" value="10" />
+            <label class="lbl">Buy-in (chips brought to the table)</label>
+            <input id="tpBuyIn" class="txt" type="number" min="10" max="200000" value="500" />
+            <label class="lbl">Bot speed</label>
+            <div class="optrow" id="opt-tp-speed">
+              <button class="opt" data-v="relaxed">Relaxed</button>
+              <button class="opt active" data-v="normal">Normal</button>
+              <button class="opt" data-v="fast">Fast</button>
+            </div>
+          </div>
+          <div id="tpWalletInfo" class="muted" style="margin:10px 0"></div>
+        </div>
+
         <button id="btnCreate" class="gold">Create room</button>
       </div>
 
@@ -227,6 +271,78 @@
   </div>
 </div>
 
+<!-- TEEN PATTI GAME -->
+<div id="screen-teenpatti" class="screen" style="display:none">
+  <div class="topbar">
+    <div class="logo">Teen Patti <span id="tpGameMeta"></span></div>
+    <div class="badges">
+      <div class="badge"><span class="badge-l">Pot</span><span id="tpBPot">0</span></div>
+      <div class="badge"><span class="badge-l">Stake</span><span id="tpBStake">0</span></div>
+      <div class="badge"><span class="badge-l">My stack</span><span id="tpBStack">0</span></div>
+      <button id="tpBtnChat" class="tiny">Chat <span id="tpChatDot" class="dot" style="display:none"></span></button>
+      <button id="tpBtnTheme" class="tiny" title="Theme">🎨</button>
+      <button id="tpBtnSaveExit" class="tiny">Save &amp; exit</button>
+    </div>
+  </div>
+
+  <div class="tp-table-area" id="tpTableArea">
+    <div class="tp-pot-center">
+      <div class="tp-pot-label">Pot</div>
+      <div class="tp-pot-amount" id="tpPotAmount">0</div>
+      <div class="tp-status" id="tpStatusLine"></div>
+    </div>
+    <div class="tp-seats-ring" id="tpSeatsRing"></div>
+  </div>
+
+  <div class="tp-hand-area">
+    <div id="tpHandRow" class="tp-hand-row"></div>
+    <div id="tpActionRow" class="tp-action-row"></div>
+  </div>
+
+  <!-- overlays -->
+  <div id="tpOvSideShow" class="overlay" style="display:none">
+    <div class="panel small center">
+      <h2>Side-show request</h2>
+      <p class="muted" id="tpSideShowText"></p>
+      <div class="btnrow">
+        <button id="tpBtnSideShowAccept" class="gold">Accept</button>
+        <button id="tpBtnSideShowDecline" class="dark">Decline</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="tpOvPaused" class="overlay" style="display:none">
+    <div class="panel small center">
+      <h2>Game paused</h2>
+      <p class="muted" id="tpPausedWho"></p>
+      <p class="muted">Progress is saved. They can rejoin with the room code any time - or the host can hand their seat to a bot.</p>
+      <div id="tpPausedActions"></div>
+    </div>
+  </div>
+
+  <div id="tpOvHandEnd" class="overlay" style="display:none">
+    <div class="panel small">
+      <h2 id="tpHeTitle" class="center"></h2>
+      <p id="tpHeReason" class="center gold-text"></p>
+      <div id="tpHeReveal" class="tp-reveal"></div>
+      <div class="btnrow">
+        <button id="tpBtnNextHand" class="gold">Next hand</button>
+        <button id="tpBtnEndRoom" class="dark">End room</button>
+      </div>
+      <div id="tpHeWait" class="wait-note" style="display:none">Waiting for the host to deal…</div>
+    </div>
+  </div>
+
+  <div id="tpChatPanel" class="chat-panel" style="display:none">
+    <div class="chat-head">Table chat <button id="tpBtnCloseChat" class="tiny">×</button></div>
+    <div id="tpChatMsgs" class="chat-msgs"></div>
+    <div class="chat-input">
+      <input id="tpChatText" class="txt" maxlength="200" placeholder="Say something…" />
+      <button id="tpBtnSendChat" class="tiny">Send</button>
+    </div>
+  </div>
+</div>
+
 <!-- THEME PICKER (reachable from home screen and in-game topbar) -->
 <div id="ovTheme" class="overlay" style="display:none">
   <div class="panel small">
@@ -238,5 +354,6 @@
 
 <script src="/socket.io/socket.io.js"></script>
 <script src="client.js"></script>
+<script src="teenpatti.js"></script>
 </body>
 </html>

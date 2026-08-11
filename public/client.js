@@ -2,7 +2,25 @@
 "use strict";
 
 const socket = io();
+window.socket = socket; // shared with teenpatti.js, a separate non-module script
 const $ = (id) => document.getElementById(id);
+
+// Persistent per-browser identity for the Teen Patti chip wallet - distinct
+// from the per-room reconnect token below, since a wallet balance outlives
+// any one room. Generated once and reused forever from this browser.
+function getPlayerId() {
+  try {
+    let id = localStorage.getItem("player_id");
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem("player_id", id);
+    }
+    return id;
+  } catch (e) {
+    return null;
+  }
+}
+const playerId = getPlayerId();
 const SUIT_SYMBOL = { S: "\u2660", H: "\u2665", D: "\u2666", C: "\u2663" };
 const SUIT_NAME = { S: "Spades", H: "Hearts", D: "Diamonds", C: "Clubs" };
 const RANK_LABEL = { 11: "J", 12: "Q", 13: "K", 14: "A" };
@@ -93,7 +111,9 @@ document.addEventListener("pointerdown", () => getAudioCtx(), { once: true });
 
 // ---------- helpers ----------
 function show(screen) {
-  ["screen-home", "screen-lobby", "screen-pending", "screen-game"].forEach((s) => ($(s).style.display = s === screen ? (s === "screen-game" ? "flex" : "block") : "none"));
+  ["screen-home", "screen-lobby", "screen-pending", "screen-game", "screen-teenpatti"].forEach(
+    (s) => ($(s).style.display = s === screen ? (s === "screen-game" || s === "screen-teenpatti" ? "flex" : "block") : "none")
+  );
 }
 function toast(msg, ms = 2200) {
   const t = $("toast");
@@ -182,7 +202,7 @@ document.querySelectorAll(".tab").forEach((tab) => {
     $("tab-join").style.display = tab.dataset.tab === "join" ? "block" : "none";
   };
 });
-["opt-players", "opt-decks", "opt-trump", "opt-speed"].forEach((rowId) => {
+["opt-players", "opt-decks", "opt-trump", "opt-speed", "opt-tp-players", "opt-tp-variant", "opt-tp-speed"].forEach((rowId) => {
   $(rowId).querySelectorAll(".opt").forEach((btn) => {
     btn.onclick = () => {
       $(rowId).querySelectorAll(".opt").forEach((b) => b.classList.remove("active"));
@@ -193,6 +213,34 @@ document.querySelectorAll(".tab").forEach((tab) => {
 function pickedOption(rowId) {
   return $(rowId).querySelector(".opt.active").dataset.v;
 }
+
+// ---------- game selector (Mindi vs Teen Patti) ----------
+function refreshWalletInfo() {
+  if (pickedOption("opt-game") !== "teenpatti" || !playerId) return;
+  socket.emit("walletBalance", { playerId }, (res) => {
+    $("tpWalletInfo").textContent = res && typeof res.balance === "number" ? `You have ${res.balance} chips.` : "";
+  });
+}
+$("opt-game").querySelectorAll(".opt").forEach((btn) => {
+  btn.onclick = () => {
+    $("opt-game").querySelectorAll(".opt").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    const isTp = btn.dataset.v === "teenpatti";
+    $("mindiOpts").style.display = isTp ? "none" : "block";
+    $("tpOpts").style.display = isTp ? "block" : "none";
+    $("brandTitle").textContent = isTp ? "Teen Patti" : "Mindi";
+    $("brandSub").textContent = isTp
+      ? "Blind or seen, chaal or pack. With real friends + bots."
+      : "Capture the tens. Beat the table. With real friends + bots.";
+    if (isTp) refreshWalletInfo();
+  };
+});
+$("btnTpAdvancedToggle").onclick = () => {
+  const open = $("tpAdvancedOpts").classList.toggle("open");
+  $("tpAdvancedOpts").classList.toggle("collapsed", !open);
+  $("btnTpAdvancedToggle").classList.toggle("open", open);
+  $("btnTpAdvancedToggle").setAttribute("aria-expanded", String(open));
+};
 $("btnAdvancedToggle").onclick = () => {
   const open = $("advancedOpts").classList.toggle("open");
   $("advancedOpts").classList.toggle("collapsed", !open);
@@ -225,18 +273,35 @@ function renderResumeList() {
 }
 renderResumeList();
 
-$("btnCreate").onclick = () => {
-  const name = $("playerName").value.trim();
-  const config = {
+function buildCreateConfig() {
+  const isTp = pickedOption("opt-game") === "teenpatti";
+  if (isTp) {
+    return {
+      gameType: "teenpatti",
+      players: +pickedOption("opt-tp-players"),
+      variant: pickedOption("opt-tp-variant"),
+      bootAmount: +$("tpBoot").value,
+      buyIn: +$("tpBuyIn").value,
+      sideShowAllowed: true,
+      speed: pickedOption("opt-tp-speed"),
+    };
+  }
+  return {
+    gameType: "mindi",
     players: +pickedOption("opt-players"),
     decks: +pickedOption("opt-decks"),
     trumpMode: pickedOption("opt-trump"),
     speed: pickedOption("opt-speed"),
   };
-  
+}
+
+$("btnCreate").onclick = () => {
+  const name = $("playerName").value.trim();
+  const config = buildCreateConfig();
+
   if (!name) return ($("homeErr").textContent = "Please enter your name first.");
 
-  socket.emit("createRoom", { name, config }, (res) => {
+  socket.emit("createRoom", { name, config, playerId }, (res) => {
     if (res.error) return ($("homeErr").textContent = res.error);
     myCode = res.code;
     saveSession(res.code, res.token, name);
@@ -250,7 +315,7 @@ $("btnJoin").onclick = () => {
   const code = $("joinCode").value.trim().toUpperCase();
   if (!name) return ($("homeErr").textContent = "Please enter your name first.");
   if (code.length !== 6) return ($("homeErr").textContent = "Room codes are 6 characters.");
-  socket.emit("requestJoin", { code, name }, (res) => {
+  socket.emit("requestJoin", { code, name, playerId }, (res) => {
     if (res.error) return ($("homeErr").textContent = res.error);
     myCode = res.code;
     pendingName = name;
@@ -304,18 +369,28 @@ $("btnLeaveLobby").onclick = () => {
 function renderLobby() {
   $("lobbyCode").textContent = state.code;
   const c = state.config;
-  $("lobbyCfg").innerHTML =
-    `<span>${c.players} players (${c.players / 2}v${c.players / 2})</span>` +
-    `<span>${c.decks} deck${c.decks > 1 ? "s" : ""} · ${c.decks * 4} tens</span>` +
-    `<span>Trump: ${{ cut: "First cut", hidden: "Hidden (Band)", random: "Open random", none: "No trump" }[c.trumpMode]}</span>` +
-    `<span>Speed: ${c.speed}</span>`;
+  const isTp = c.gameType === "teenpatti";
+  if (isTp) {
+    const variantLabel = { classic: "Classic", muflis: "Muflis (lowest wins)", ak47: "AK47 (A,K,4,7 wild)", joker: "Joker wild" }[c.variant] || c.variant;
+    $("lobbyCfg").innerHTML =
+      `<span>${c.players} players</span>` +
+      `<span>Variant: ${variantLabel}</span>` +
+      `<span>Boot ${c.bootAmount} · Buy-in ${c.buyIn}</span>` +
+      `<span>Speed: ${c.speed}</span>`;
+  } else {
+    $("lobbyCfg").innerHTML =
+      `<span>${c.players} players (${c.players / 2}v${c.players / 2})</span>` +
+      `<span>${c.decks} deck${c.decks > 1 ? "s" : ""} · ${c.decks * 4} tens</span>` +
+      `<span>Trump: ${{ cut: "First cut", hidden: "Hidden (Band)", random: "Open random", none: "No trump" }[c.trumpMode]}</span>` +
+      `<span>Speed: ${c.speed}</span>`;
+  }
   const isHost = state.seats[state.you] && state.seats[state.you].isHost;
   const seatsEl = $("lobbySeats");
   seatsEl.innerHTML = "";
   state.seats.forEach((s, i) => {
     const div = document.createElement("div");
     const myTeam = state.you % 2;
-    div.className = "seat-card " + (i % 2 === myTeam ? "teamA" : "teamB");
+    div.className = "seat-card " + (isTp ? "" : i % 2 === myTeam ? "teamA" : "teamB");
     let who = s.name
       ? `<span class="who">${esc(s.name)}${i === state.you ? " (you)" : ""}${s.isBot ? " 🤖" : ""}</span>`
       : `<span class="who" style="color:#6f9a91">Empty seat</span>`;
@@ -732,6 +807,9 @@ function applyState(s, extra) {
   if (s.phase === "lobby") {
     show("screen-lobby");
     renderLobby();
+  } else if (s.config.gameType === "teenpatti") {
+    show("screen-teenpatti");
+    if (window.renderTeenPatti) window.renderTeenPatti(s, extra);
   } else {
     show("screen-game");
     renderGame();
