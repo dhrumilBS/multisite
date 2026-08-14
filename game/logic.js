@@ -111,57 +111,20 @@ function sortHand(hand) {
 
 const isTen = (c) => c.rank === 10;
 
-// trick: [{seat, card}] in play order. On a tie for highest card (possible with
-// multiple decks - e.g. two 10-of-spades), the tied players' next-highest
-// REMAINING hand card is compared (peek only, nothing is played/removed); ties
-// keep recursing to the next-highest remaining card until broken. If tied
-// players run out of cards at the same depth (last trick of a hand), the
-// first card played wins as a final fallback. `hands` is optional and indexed
-// by seat - omit it (as the bot's speculative "who's winning" checks do) to
-// get the plain first-played-wins behavior with no peeking.
-function trickWinner(trick, trumpSuit, trumpActive, hands) {
+// trick: [{seat, card}] in play order. On a tie for highest card (possible
+// with multiple decks - e.g. two 10-of-spades played in the same trick), the
+// LATER-played card wins outright - the standard multi-deck house rule.
+function trickWinner(trick, trumpSuit, trumpActive) {
   let best = trick[0];
   for (let i = 1; i < trick.length; i++) {
     const t = trick[i];
     const bTrump = trumpActive && trumpSuit && best.card.suit === trumpSuit;
     const cTrump = trumpActive && trumpSuit && t.card.suit === trumpSuit;
     if (cTrump && !bTrump) best = t;
-    else if (cTrump && bTrump && t.card.rank > best.card.rank) best = t;
-    else if (!cTrump && !bTrump && t.card.suit === best.card.suit && t.card.rank > best.card.rank) best = t;
+    else if (cTrump && bTrump && t.card.rank >= best.card.rank) best = t;
+    else if (!cTrump && !bTrump && t.card.suit === best.card.suit && t.card.rank >= best.card.rank) best = t;
   }
-
-  if (!hands) return best.seat;
-
-  const bestTrump = trumpActive && trumpSuit && best.card.suit === trumpSuit;
-  const tied = trick.filter((t) => {
-    if (t === best) return true;
-    const tTrump = trumpActive && trumpSuit && t.card.suit === trumpSuit;
-    if (tTrump !== bestTrump) return false;
-    if (!tTrump && t.card.suit !== best.card.suit) return false;
-    return t.card.rank === best.card.rank;
-  });
-  if (tied.length <= 1) return best.seat;
-
-  const sorted = {};
-  for (const t of tied) sorted[t.seat] = (hands[t.seat] || []).slice().sort((a, b) => b.rank - a.rank);
-
-  let candidates = tied;
-  let depth = 0;
-  while (candidates.length > 1) {
-    let max = -Infinity;
-    let anyHasCard = false;
-    const peek = {};
-    for (const t of candidates) {
-      const card = sorted[t.seat][depth];
-      peek[t.seat] = card ? card.rank : -Infinity;
-      if (card) anyHasCard = true;
-      if (peek[t.seat] > max) max = peek[t.seat];
-    }
-    if (!anyHasCard) return best.seat; // all tied hands exhausted together -> first-played wins
-    candidates = candidates.filter((t) => peek[t.seat] === max);
-    depth++;
-  }
-  return candidates[0].seat;
+  return best.seat;
 }
 
 function legalCards(hand, trick) {

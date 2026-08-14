@@ -190,15 +190,16 @@
 <!-- GAME -->
 <div id="screen-game" class="screen" style="display:none">
   <div class="topbar">
-    <div class="logo">Mindi <span id="gameMeta"></span></div>
+    <div class="logo">Mindi</div>
     <div class="badges">
       <div class="badge"><span class="badge-l">Trump</span><span id="bTrump">-</span></div>
       <div class="badge"><span class="badge-l">Tens</span><span id="bTens">0:0</span></div>
       <div class="badge"><span class="badge-l">Match</span><span id="bMatch">0:0</span></div>
       <button id="btnLastTrick" class="tiny" style="display:none">Last trick</button>
+      <button id="btnGameInfo" class="tiny" title="Room &amp; game info">ℹ️</button>
       <button id="btnChat" class="tiny">Chat <span id="chatDot" class="dot" style="display:none"></span></button>
       <button id="btnThemeGame" class="tiny" title="Theme">🎨</button>
-      <button id="btnSaveExit" class="tiny">Save &amp; exit</button>
+      <button id="btnExitGame" class="tiny exit-btn">✕ Exit</button>
     </div>
   </div>
 
@@ -271,6 +272,14 @@
     </div>
   </div>
 
+  <div id="ovGameInfo" class="overlay" style="display:none">
+    <div class="panel small center">
+      <h2>Game info</h2>
+      <p class="muted" id="giMeta"></p>
+      <button id="btnCloseGameInfo" class="dark" style="margin-top:14px">Close</button>
+    </div>
+  </div>
+
   <div id="chatPanel" class="chat-panel" style="display:none">
     <div class="chat-head">Table chat <button id="btnCloseChat" class="tiny">×</button></div>
     <div id="chatMsgs" class="chat-msgs"></div>
@@ -298,7 +307,7 @@
       <div class="badge"><span class="badge-l">My stack</span><span id="tpBStack">0</span></div>
       <button id="tpBtnChat" class="tiny">Chat <span id="tpChatDot" class="dot" style="display:none"></span></button>
       <button id="tpBtnTheme" class="tiny" title="Theme">🎨</button>
-      <button id="tpBtnSaveExit" class="tiny">Save &amp; exit</button>
+      <button id="tpBtnExitGame" class="tiny exit-btn">✕ Exit</button>
     </div>
   </div>
 
@@ -311,12 +320,21 @@
       <div class="tp-status" id="tpStatusLine"></div>
     </div>
     <div class="tp-seats-ring" id="tpSeatsRing"></div>
+    <div class="tp-chip-fx" id="tpChipFx"></div>
   </div>
 
   <div class="tp-hand-area">
     <div id="tpHandRow" class="tp-hand-row"></div>
     <div id="tpOutOfCoins" class="tp-out-of-coins" style="display:none"></div>
     <div id="tpActionRow" class="tp-action-row"></div>
+    <!-- Replaces the old hand-end modal: same sticky bottom bar, swapped to
+         Next hand/End room controls instead of legal-action buttons, so the
+         win reveal itself can play out on the table instead of behind a popup. -->
+    <div id="tpHandEndBar" class="tp-hand-end-bar" style="display:none">
+      <button id="tpBtnNextHand" class="gold">Next hand</button>
+      <button id="tpBtnEndRoom" class="dark">End room</button>
+      <span id="tpHeWait" class="wait-note" style="display:none">Waiting for the host to deal…</span>
+    </div>
   </div>
 
   <!-- overlays -->
@@ -337,19 +355,6 @@
       <p class="muted" id="tpPausedWho"></p>
       <p class="muted">Progress is saved. They can rejoin with the room code any time - or the host can hand their seat to a bot.</p>
       <div id="tpPausedActions"></div>
-    </div>
-  </div>
-
-  <div id="tpOvHandEnd" class="overlay" style="display:none">
-    <div class="panel small">
-      <h2 id="tpHeTitle" class="center"></h2>
-      <p id="tpHeReason" class="center gold-text"></p>
-      <div id="tpHeReveal" class="tp-reveal"></div>
-      <div class="btnrow">
-        <button id="tpBtnNextHand" class="gold">Next hand</button>
-        <button id="tpBtnEndRoom" class="dark">End room</button>
-      </div>
-      <div id="tpHeWait" class="wait-note" style="display:none">Waiting for the host to deal…</div>
     </div>
   </div>
 

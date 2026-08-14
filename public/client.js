@@ -204,6 +204,8 @@ function openThemePicker() { $("ovTheme").style.display = "flex"; }
 $("btnThemeHome").onclick = openThemePicker;
 $("btnThemeGame").onclick = openThemePicker;
 $("btnCloseTheme").onclick = () => ($("ovTheme").style.display = "none");
+$("btnGameInfo").onclick = () => ($("ovGameInfo").style.display = "flex");
+$("btnCloseGameInfo").onclick = () => ($("ovGameInfo").style.display = "none");
 
 // ---------- home screen ----------
 try { $("playerName").value = localStorage.getItem("mindi_name") || ""; } catch (e) {}
@@ -606,6 +608,23 @@ function seatPos(angleDeg, rx, ry) {
 function trickSlotPos(angleDeg) {
   return seatPos(angleDeg, 15, 13);
 }
+// Fans a hand row's cards into a shallow curved arc (like a real card fan)
+// by setting a --rot/--lift custom property per card, picked up by the
+// .hand-row/.tp-hand-row .card CSS rules. Uses the same angle-then-trig
+// approach as seatPos above, just applied to per-card rotation/lift instead
+// of ring position.
+function applyHandFan(rowEl) {
+  const cards = rowEl.querySelectorAll(":scope > .card");
+  const m = cards.length;
+  const spread = m <= 1 ? 0 : Math.min(34, 2.4 * (m - 1)); // total degrees, capped
+  const radius = 140; // px - how much the fan's ends dip relative to its center
+  cards.forEach((el, i) => {
+    const angle = m <= 1 ? 0 : -spread / 2 + (spread * i) / (m - 1);
+    const lift = (1 - Math.cos((angle * Math.PI) / 180)) * radius;
+    el.style.setProperty("--rot", angle.toFixed(2) + "deg");
+    el.style.setProperty("--lift", lift.toFixed(2) + "px");
+  });
+}
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 }
@@ -641,7 +660,7 @@ function renderGame() {
   const you = state.you;
   const names = state.seats.map((s) => s.name || "?");
 
-  $("gameMeta").textContent = `${n}p · ${state.config.decks} deck${state.config.decks > 1 ? "s" : ""} · room ${state.code}`;
+  $("giMeta").textContent = `${n}p · ${state.config.decks} deck${state.config.decks > 1 ? "s" : ""} · room ${state.code}`;
 
   // badges
   let trumpTxt;
@@ -766,6 +785,7 @@ function renderGame() {
       return cardHTML(c, cls);
     })
     .join("");
+  applyHandFan(row);
   if (newHand) {
     [...row.children].forEach((el, i) => {
       el.classList.add("dealt");
@@ -942,7 +962,7 @@ function doSaveExit() {
     renderResumeList();
   });
 }
-$("btnSaveExit").onclick = doSaveExit;
+$("btnExitGame").onclick = doSaveExit;
 
 // chat wiring
 $("btnChat").onclick = () => {

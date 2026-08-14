@@ -168,7 +168,7 @@ function playCard(room, seat, cardId) {
 function resolveTrick(room) {
   const g = room.game;
   const trumpActive = g.trumpRevealed && !!g.trumpSuit;
-  const winner = trickWinner(g.trick, g.trumpSuit, trumpActive, g.hands);
+  const winner = trickWinner(g.trick, g.trumpSuit, trumpActive);
   const team = winner % 2;
   const tens = g.trick.filter((t) => isTen(t.card)).map((t) => t.card);
   g.captured[team].tens.push(...tens);

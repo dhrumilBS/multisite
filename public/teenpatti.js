@@ -35,6 +35,20 @@ let tpCoinRequestSent = false; // guards against spamming "ask host" while a req
 let tpCoinRequests = []; // host-side queue: [{seat, name}], de-duplicated by seat
 let tpLastState = null; // so the coin-request panel's own buttons can re-render after acting
 
+// Every "state" push triggers a full re-render (no diffing anywhere in this
+// app) - that's fine for the felt/pot text, but rebuilding the seat ring and
+// action buttons from scratch on every push (including ones that don't touch
+// either) is what reads as "flicker" after an action: the buttons blink out
+// and back in even when the legal-action list didn't change. These signature
+// caches let the ring/action-row DOM stay untouched when the data driving
+// them is identical to last render.
+let tpLastRingSig = null;
+let tpLastPot = null;
+let tpAnimatedHandSeq = null; // last handSeq the win animation has already played for
+let tpLastHandSig = null; // skips rebuilding your own card row when it hasn't actually changed
+let tpLastActionSig = null; // skips rebuilding the action button row when it hasn't actually changed
+let tpLastExtra = null; // mirrors tpLastState so cached-DOM click handlers always re-render with the latest push
+
 function tpCardBackHTML() {
   return `<div class="card tp-back"></div>`;
 }
@@ -53,6 +67,7 @@ function tpEmit(eventAction, payload) {
 
 function renderTeenPatti(state, extra) {
   tpLastState = state;
+  tpLastExtra = extra;
   const g = state.game;
   const you = state.you;
   const n = state.config.players;
@@ -62,11 +77,26 @@ function renderTeenPatti(state, extra) {
   $("tpBPot").textContent = g.pot;
   $("tpBStake").textContent = g.currentStake;
   $("tpBStack").textContent = g.seats[you] ? g.seats[you].stack : 0;
-  $("tpPotAmount").textContent = g.pot;
+  const potEl = $("tpPotAmount");
+  potEl.textContent = g.pot;
+  // A little "bump" whenever the pot actually grows (a bet landed) - cheap
+  // visual feedback for a bet at the table itself, not tied to the seat ring.
+  if (tpLastPot !== null && g.pot > tpLastPot) {
+    potEl.classList.remove("bump");
+    void potEl.offsetWidth; // restart the animation even if it's still playing
+    potEl.classList.add("bump");
+  }
+  tpLastPot = g.pot;
+
+  // hand-end context, needed by both the seat ring (reveal/win-flash) and
+  // the status line/animation below
+  const handEndActive = state.phase === "handEnd" && !!g.result;
+  const revealMap = {};
+  if (handEndActive && g.result.showdownReveal) g.result.showdownReveal.forEach((rv) => (revealMap[rv.seat] = rv));
+  const winnerSeats = handEndActive && g.result.winners ? g.result.winners.map((w) => w.seat) : [];
 
   // seats - same ring layout math as Mindi's table (seatAngle/seatPos from client.js)
   const ring = $("tpSeatsRing");
-  ring.innerHTML = "";
   const RX = 45, RY = 41;
   // Chip leader - the seated player currently holding the most chips at the
   // table. Only meaningful with 2+ seated players, otherwise everyone would
@@ -77,17 +107,20 @@ function renderTeenPatti(state, extra) {
   }
   const maxStack = seatedStacks.length > 1 ? Math.max(...seatedStacks) : -1;
   const lastWinners = state.lastHandWinners || [];
+  const posBySeat = {};
+  const seatEntries = [];
   for (let k = 0; k < n; k++) {
     const seat = (you + k) % n;
     const angle = seatAngle(seat, you, n);
     const pos = seatPos(angle, seat === you ? RX * 0.7 : RX, seat === you ? RY * 1.12 : RY);
+    posBySeat[seat] = pos;
     const gs = g.seats[seat];
     const identity = state.seats[seat];
     const isTurn = state.phase === "betting" && g.turnSeat === seat && !state.paused;
     const isLastWinner = lastWinners.includes(seat);
     const isChipLeader = maxStack > 0 && gs.stack === maxStack;
-    const div = document.createElement("div");
-    div.className = `seat${isTurn ? " turn" : ""}${seat === you ? " me" : ""}${isLastWinner ? " last-winner" : ""}${isChipLeader ? " chip-leader" : ""}`;
+    const isWinFlash = winnerSeats.includes(seat);
+    const reveal = revealMap[seat];
 
     const statusBits = [];
     if (!gs.active) statusBits.push("out");
@@ -97,29 +130,88 @@ function renderTeenPatti(state, extra) {
       if (gs.isAllIn) statusBits.push("all-in");
     }
 
+    const classes = [
+      "seat",
+      isTurn && "turn",
+      seat === you && "me",
+      isLastWinner && "last-winner",
+      isChipLeader && "chip-leader",
+      gs.folded && "folded",
+      gs.isAllIn && "all-in",
+      isWinFlash && "win-flash",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
     const badges =
       (isLastWinner ? '<span class="seat-badge win-badge" title="Won the last hand">&#127942;</span>' : "") +
       (isChipLeader ? '<span class="seat-badge chip-badge" title="Chip leader">&#128176;</span>' : "");
 
-    if (seat === you) {
-      div.innerHTML = `<div class="avatar">You${isTurn ? " · your turn" : ""}</div>${badges}<div class="sub">${gs.stack} chips · ${statusBits.join(", ")}</div>`;
-    } else {
-      div.innerHTML = `
-        <div class="avatar">${esc(names[seat][0] || "?")}</div>${badges}
+    // Live wager for the current betting round - shown instead of only the
+    // total stack, so a raise/chaal is visible at the seat itself.
+    const betBadge =
+      state.phase === "betting" && gs.active && !gs.folded && gs.contributed > 0
+        ? `<div class="seat-bet">${gs.contributed}</div>`
+        : "";
+
+    // Showdown reveal - a small face-up fan above the seat instead of a
+    // modal listing every hand. Only seats the server actually revealed
+    // (real showdown participants) ever get cards here.
+    const miniCards = reveal
+      ? `<div class="tp-mini-cards" title="${esc(tpDescribeEval(reveal.evaluation))}">${reveal.cards
+          .map((c) => cardHTML(c, "xs"))
+          .join("")}</div>`
+      : "";
+
+    const inner =
+      seat === you
+        ? `${miniCards}<div class="avatar">You${isTurn ? " · your turn" : ""}</div>${badges}<div class="sub">${gs.stack} chips · ${statusBits.join(", ")}</div>${betBadge}`
+        : `${miniCards}<div class="avatar">${esc(names[seat][0] || "?")}</div>${badges}
         <div class="nm">${esc(names[seat])}${identity.isBot ? " 🤖" : ""}</div>
-        <div class="sub">${gs.stack} chips · ${statusBits.join(", ")}${!identity.connected && !identity.isBot ? ' <span class="offline">offline</span>' : ""}</div>`;
-      setSeatAvatar(div, identity.avatar);
-    }
-    div.style.left = pos.x + "%";
-    div.style.top = pos.y + "%";
-    ring.appendChild(div);
+        <div class="sub">${gs.stack} chips · ${statusBits.join(", ")}${!identity.connected && !identity.isBot ? ' <span class="offline">offline</span>' : ""}</div>${betBadge}`;
+
+    seatEntries.push({ seat, classes, inner, pos, avatar: identity.avatar });
   }
 
-  // status line
+  const ringSig = JSON.stringify({
+    you,
+    n,
+    entries: seatEntries.map((e) => ({ c: e.classes, i: e.inner, x: e.pos.x, y: e.pos.y, a: e.avatar })),
+  });
+  if (ringSig !== tpLastRingSig) {
+    tpLastRingSig = ringSig;
+    ring.innerHTML = "";
+    seatEntries.forEach((e) => {
+      const div = document.createElement("div");
+      div.className = e.classes;
+      div.innerHTML = e.inner;
+      div.style.left = e.pos.x + "%";
+      div.style.top = e.pos.y + "%";
+      ring.appendChild(div);
+      if (e.seat !== you) setSeatAvatar(div, e.avatar);
+    });
+  }
+
+  // Win animation - chips fly from the pot to the winning seat(s), once per
+  // hand (guarded by handSeq so it doesn't replay on unrelated re-renders
+  // like an incoming chat message while everyone waits for "Next hand").
+  if (handEndActive && winnerSeats.length && tpAnimatedHandSeq !== state.handSeq) {
+    tpAnimatedHandSeq = state.handSeq;
+    tpPlayWinAnimation(winnerSeats.map((s) => posBySeat[s]).filter(Boolean));
+  }
+
+  // status line - hand-end result is announced here instead of a popup
   let status;
   if (state.paused) status = "Paused - waiting for a player…";
-  else if (state.phase === "handEnd") status = "Hand complete";
-  else if (g.sideShowRequest && g.sideShowRequest.status === "pending") {
+  else if (handEndActive) {
+    const r = g.result;
+    if (!r.winners || r.winners.length === 0) status = "No hand was dealt";
+    else {
+      const won = r.winners.some((w) => w.seat === you);
+      const title = won ? "You won the pot!" : `${esc(names[r.winners[0].seat])} wins the pot`;
+      status = r.reason ? `${title} — ${r.reason}` : title;
+    }
+  } else if (g.sideShowRequest && g.sideShowRequest.status === "pending") {
     status =
       g.sideShowRequest.target === you
         ? `${esc(names[g.sideShowRequest.requester])} wants a side-show`
@@ -127,26 +219,32 @@ function renderTeenPatti(state, extra) {
   } else if (g.turnSeat === you) status = "Your turn";
   else status = `${esc(names[g.turnSeat])} is thinking…`;
   $("tpStatusLine").textContent = status;
+  $("tpStatusLine").classList.toggle("win", handEndActive && winnerSeats.length > 0);
 
-  // your hand
+  // your hand - only touch the DOM when blind/seen state or the actual cards
+  // change. Without this, every state push (including ones triggered by
+  // other seats acting) tears your own card row down and rebuilds it, which
+  // is what reads as flicker right after you take your own turn.
   const myState = g.seats[you];
   const row = $("tpHandRow");
-  if (!myState || !myState.hasCards) {
-    row.innerHTML = "";
-  } else if (myState.isBlind) {
-    row.innerHTML = tpCardBackHTML() + tpCardBackHTML() + tpCardBackHTML();
-  } else {
-    row.innerHTML = myState.cards.map((c) => cardHTML(c)).join("");
+  const handSig =
+    !myState || !myState.hasCards ? "none" : myState.isBlind ? "blind" : "seen:" + myState.cards.map((c) => c.id).join(",");
+  if (handSig !== tpLastHandSig) {
+    tpLastHandSig = handSig;
+    if (!myState || !myState.hasCards) {
+      row.innerHTML = "";
+    } else if (myState.isBlind) {
+      row.innerHTML = tpCardBackHTML() + tpCardBackHTML() + tpCardBackHTML();
+    } else {
+      row.innerHTML = myState.cards.map((c) => cardHTML(c)).join("");
+    }
+    applyHandFan(row);
   }
 
   // actions - built straight from the server's legal-action list for this seat
   const actRow = $("tpActionRow");
-  actRow.innerHTML = "";
   const raiseType = (g.legal || []).find((t) => t === "blind-raise" || t === "seen-raise");
 
-  // Raise +/- stepper - lets the player dial in a raise between the server's
-  // minimum legal raise and its cap of 2x that minimum, rather than always
-  // raising by the fixed minimum amount.
   if (raiseType && g.raiseBounds) {
     const turnKey = `${state.code}-${state.handSeq}-${g.turnSeat}`;
     if (tpRaiseTurnKey !== turnKey) {
@@ -154,32 +252,59 @@ function renderTeenPatti(state, extra) {
       tpRaiseAmount = g.raiseBounds.min;
     }
     tpRaiseAmount = Math.min(g.raiseBounds.max, Math.max(g.raiseBounds.min, tpRaiseAmount));
-    const canStep = g.raiseBounds.max > g.raiseBounds.min;
-    const step = Math.max(1, Math.round((g.raiseBounds.max - g.raiseBounds.min) / 5) || 1);
-    const stepper = document.createElement("div");
-    stepper.className = "tp-raise-stepper";
-    stepper.innerHTML =
-      `<button type="button" class="tiny raise-step-minus"${canStep ? "" : " disabled"}>&minus;</button>` +
-      `<span class="raise-amount">${tpRaiseAmount}</span>` +
-      `<button type="button" class="tiny raise-step-plus"${canStep ? "" : " disabled"}>+</button>`;
-    stepper.querySelector(".raise-step-minus").onclick = () => {
-      tpRaiseAmount = Math.max(g.raiseBounds.min, tpRaiseAmount - step);
-      renderTeenPatti(state, extra);
-    };
-    stepper.querySelector(".raise-step-plus").onclick = () => {
-      tpRaiseAmount = Math.min(g.raiseBounds.max, tpRaiseAmount + step);
-      renderTeenPatti(state, extra);
-    };
-    actRow.appendChild(stepper);
   }
 
-  (g.legal || []).forEach((type) => {
-    const btn = document.createElement("button");
-    btn.className = type === "pack" ? "dark" : "gold";
-    btn.textContent = type === raiseType ? `${TP_ACTION_LABEL[type]} to ${tpRaiseAmount}` : TP_ACTION_LABEL[type] || type;
-    btn.onclick = () => tpEmit(TP_ACTION_EVENT[type] || type, type === raiseType ? { amount: tpRaiseAmount } : undefined);
-    actRow.appendChild(btn);
+  // Skip rebuilding the button row unless what it actually depends on
+  // changed. Without this, every incoming state push - including ones from
+  // other seats acting, or unrelated chat/timer pushes - tears the buttons
+  // down and rebuilds them from scratch, which is what reads as a flicker
+  // right after you take your own action.
+  const actionSig = JSON.stringify({
+    legal: g.legal || [],
+    raiseType,
+    raiseAmount: tpRaiseAmount,
+    bounds: g.raiseBounds || null,
   });
+  if (actionSig !== tpLastActionSig) {
+    tpLastActionSig = actionSig;
+    actRow.innerHTML = "";
+
+    // Raise +/- stepper - lets the player dial in a raise between the
+    // server's minimum legal raise and its cap of 2x that minimum, rather
+    // than always raising by the fixed minimum amount.
+    if (raiseType && g.raiseBounds) {
+      const canStep = g.raiseBounds.max > g.raiseBounds.min;
+      const stepper = document.createElement("div");
+      stepper.className = "tp-raise-stepper";
+      stepper.innerHTML =
+        `<button type="button" class="tiny raise-step-minus"${canStep ? "" : " disabled"}>&minus;</button>` +
+        `<span class="raise-amount">${tpRaiseAmount}</span>` +
+        `<button type="button" class="tiny raise-step-plus"${canStep ? "" : " disabled"}>+</button>`;
+      // No partial creeping - "-" drops straight back to the minimum legal
+      // raise, "+" jumps straight to the maximum (which is exactly double
+      // the minimum, per raiseCostBounds() server-side). Re-render off
+      // tpLastState/tpLastExtra (not the closured state/extra) so this
+      // handler still targets the latest push even if this DOM was cached
+      // from an earlier render.
+      stepper.querySelector(".raise-step-minus").onclick = () => {
+        tpRaiseAmount = g.raiseBounds.min;
+        renderTeenPatti(tpLastState, tpLastExtra);
+      };
+      stepper.querySelector(".raise-step-plus").onclick = () => {
+        tpRaiseAmount = g.raiseBounds.max;
+        renderTeenPatti(tpLastState, tpLastExtra);
+      };
+      actRow.appendChild(stepper);
+    }
+
+    (g.legal || []).forEach((type) => {
+      const btn = document.createElement("button");
+      btn.className = (type === "pack" ? "dark" : "gold") + ` tp-act-${type}`;
+      btn.textContent = type === raiseType ? `${TP_ACTION_LABEL[type]} to ${tpRaiseAmount}` : TP_ACTION_LABEL[type] || type;
+      btn.onclick = () => tpEmit(TP_ACTION_EVENT[type] || type, type === raiseType ? { amount: tpRaiseAmount } : undefined);
+      actRow.appendChild(btn);
+    });
+  }
 
   // out-of-coins banner - independent of whose turn it is, since running out
   // isn't a turn action. tableStacks (not the current hand's live stack) is
@@ -246,32 +371,48 @@ function renderTeenPatti(state, extra) {
     act.appendChild(exitB);
   }
 
-  // hand end
-  $("tpOvHandEnd").style.display = state.phase === "handEnd" && g.result ? "flex" : "none";
-  if (state.phase === "handEnd" && g.result) {
-    const r = g.result;
-    const won = (r.winners || []).some((w) => w.seat === you);
-    $("tpHeTitle").textContent =
-      !r.winners || r.winners.length === 0
-        ? "No hand was dealt"
-        : won
-        ? "You won the pot!"
-        : `${esc(names[r.winners[0].seat])} wins the pot`;
-    $("tpHeReason").textContent = r.reason || "";
-    $("tpHeReveal").innerHTML = (r.showdownReveal || [])
-      .map(
-        (rv) =>
-          `<div class="tp-reveal-item"><div class="nm">${esc(names[rv.seat])} - ${tpDescribeEval(rv.evaluation)}</div>` +
-          `<div class="cards">${rv.cards.map((c) => cardHTML(c, "sm")).join("")}</div></div>`
-      )
-      .join("");
+  // hand end - no modal: the winner/reveal already played out on the table
+  // above (status line + mini-cards + chip-fly), so the sticky bottom bar
+  // just swaps from legal-action buttons to Next hand/End room.
+  $("tpActionRow").style.display = handEndActive ? "none" : "flex";
+  $("tpHandEndBar").style.display = handEndActive ? "flex" : "none";
+  if (handEndActive) {
     const isHost = state.seats[you].isHost;
-    $("tpBtnNextHand").style.display = isHost ? "block" : "none";
-    $("tpBtnEndRoom").style.display = isHost ? "block" : "none";
-    $("tpHeWait").style.display = isHost ? "none" : "block";
+    $("tpBtnNextHand").style.display = isHost ? "" : "none";
+    $("tpBtnEndRoom").style.display = isHost ? "" : "none";
+    $("tpHeWait").style.display = isHost ? "none" : "inline-block";
   }
 
   renderTpChat(state);
+}
+
+// Chips fly from the pot's fixed screen position (see .tp-pot-center in
+// style.css) to each winning seat's position - a set-then-move trick: the
+// chip is placed at the pot first, then given its destination a tick later
+// so the CSS `transition: left/top` on .tp-chip-fly actually animates it.
+function tpPlayWinAnimation(targetPositions) {
+  const fx = $("tpChipFx");
+  if (!fx || !targetPositions.length) return;
+  const potPos = { x: 50, y: 42 };
+  targetPositions.forEach((toPos, wi) => {
+    for (let i = 0; i < 6; i++) {
+      const chip = document.createElement("div");
+      chip.className = "tp-chip-fly";
+      chip.style.left = potPos.x + "%";
+      chip.style.top = potPos.y + "%";
+      chip.style.opacity = "1";
+      fx.appendChild(chip);
+      const jitterX = (Math.random() * 8 - 4);
+      const jitterY = (Math.random() * 8 - 4);
+      const delay = wi * 60 + i * 45;
+      setTimeout(() => {
+        chip.style.left = toPos.x + jitterX + "%";
+        chip.style.top = toPos.y + jitterY + "%";
+        chip.style.opacity = "0";
+      }, delay);
+      setTimeout(() => chip.remove(), delay + 850);
+    }
+  });
 }
 
 function renderTpCoinRequests(state) {
@@ -340,7 +481,7 @@ $("tpBtnSendChat").onclick = tpSendChat;
 $("tpChatText").addEventListener("keydown", (e) => e.key === "Enter" && tpSendChat());
 
 $("tpBtnTheme").onclick = openThemePicker;
-$("tpBtnSaveExit").onclick = doSaveExit;
+$("tpBtnExitGame").onclick = doSaveExit;
 
 // Host-only: relayed from server.js when some other seat hits 0 chips and
 // asks for a top-up. Queued client-side only - not part of persisted room
