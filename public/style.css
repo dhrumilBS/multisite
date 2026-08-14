@@ -184,6 +184,42 @@ button { font-family: inherit; }
 .theme-fab {
   position: absolute; top: 0; right: 0; font-size: 18px; padding: 7px 11px; border-radius: 50%;
 }
+.profile-card { display: flex; align-items: center; gap: 14px; }
+.avatar-upload { position: relative; flex-shrink: 0; }
+.profile-avatar {
+  width: 64px; height: 64px; border-radius: 50%; object-fit: cover;
+  border: 2px solid var(--border); box-shadow: 0 2px 8px rgba(0,0,0,.35);
+}
+.profile-avatar.fallback {
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(180deg, var(--accent), var(--accent-dark));
+  color: var(--accent-contrast); font-size: 24px; font-weight: 700; font-family: Georgia, serif;
+}
+.avatar-edit-btn {
+  position: absolute; right: -4px; bottom: -4px; width: 26px; height: 26px; padding: 0;
+  border-radius: 50%; border: 2px solid var(--surface); background: var(--surface-3); color: var(--text);
+  font-size: 13px; display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.profile-fields { flex: 1 1 auto; min-width: 0; }
+.profile-fields .lbl { margin-top: 0; }
+.passbook-btn { flex-shrink: 0; white-space: nowrap; align-self: center; }
+
+/* ---------- passbook ---------- */
+.passbook-list { max-height: 50vh; overflow-y: auto; margin: 14px 0; display: flex; flex-direction: column; gap: 6px; }
+.passbook-item {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; padding: 8px 11px;
+}
+.passbook-item .pb-info { min-width: 0; }
+.passbook-item .pb-note { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.passbook-item .pb-when { font-size: 11px; color: var(--text-faint); }
+.passbook-item .pb-amount { font-weight: 700; font-size: 14px; white-space: nowrap; }
+.passbook-item .pb-amount.credit { color: var(--team-a-soft); }
+.passbook-item .pb-amount.debit { color: var(--danger); }
+.passbook-item .pb-amount.neutral { color: var(--accent-text); }
+.passbook-item .pb-balance { font-size: 10px; color: var(--text-faint); text-align: right; }
+.passbook-empty { text-align: center; color: var(--text-faint); font-size: 13px; padding: 20px 0; }
+
 .tabs { display: flex; gap: 8px; margin-top: 16px; }
 .tab { flex: 1; padding: 10px 0; border-radius: 9px; border: 2px solid var(--border); background: var(--surface-2); color: var(--text-faint); font-weight: 600; cursor: pointer; }
 .tab.active { border-color: var(--accent); background: var(--surface-3); color: var(--gold-text); }
@@ -249,9 +285,11 @@ button { font-family: inherit; }
 }
 .seat-card.teamA { border-left: 4px solid var(--team-a); }
 .seat-card.teamB { border-left: 4px solid var(--team-b); }
-.seat-card .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seat-card .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
 .seat-card .tag { font-size: 10px; color: var(--accent-text); }
 .seat-card .off { color: var(--danger); font-size: 10px; }
+.seat-card-avatar { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.avatar-photo { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
 .wait-note { text-align: center; color: var(--text-faint); font-size: 13px; margin-top: 12px; }
 
 /* ---------- game ---------- */
@@ -465,6 +503,24 @@ button { font-family: inherit; }
   box-shadow: 0 6px 24px rgba(0,0,0,.5);
 }
 
+/* ---------- Landscape-only mobile lock ---------- */
+.rotate-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 10000;
+  flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  background: var(--bg-b); color: var(--text); text-align: center; padding: 24px;
+}
+.rotate-icon { font-size: 48px; animation: rotateHint 1.8s ease-in-out infinite; }
+.rotate-text { font-size: 15px; color: var(--text-muted); max-width: 280px; }
+@keyframes rotateHint {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-90deg); }
+}
+@media (max-width: 900px) and (orientation: portrait) {
+  .rotate-overlay { display: flex; }
+  body > *:not(.rotate-overlay) { display: none !important; }
+}
+
 @media (max-width: 560px) {
   .brand h1 { font-size: 44px; }
   .card { width: 50px; height: 72px; }
@@ -528,6 +584,26 @@ button { font-family: inherit; }
 .tp-seats-ring .seat .avatar { background: linear-gradient(180deg, var(--accent), var(--accent-dark)); }
 .tp-seats-ring .seat.me .avatar { background: linear-gradient(180deg, var(--accent), var(--accent-dark)); }
 
+/* Winner of the last hand keeps a gold ring around their seat through the
+   next hand, and the current chip leader gets a distinct green ring - both
+   read at a glance without covering the turn-indicator pulse. */
+.tp-seats-ring .seat.last-winner .avatar {
+  border-color: var(--gold-text);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb),.35), 0 0 14px rgba(var(--accent-rgb),.8);
+}
+.tp-seats-ring .seat.chip-leader .avatar {
+  box-shadow: 0 0 0 3px rgba(92,184,133,.4), 0 0 12px rgba(92,184,133,.85);
+}
+.tp-seats-ring .seat.last-winner.chip-leader .avatar {
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb),.35), 0 0 0 6px rgba(92,184,133,.4), 0 0 14px rgba(var(--accent-rgb),.8);
+}
+.seat-badge {
+  position: absolute; top: -4px; font-size: 13px; line-height: 1;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.7));
+}
+.seat-badge.win-badge { left: 4px; }
+.seat-badge.chip-badge { right: 4px; }
+
 .tp-pot-center {
   position: absolute; left: 50%; top: 42%; transform: translate(-50%,-50%);
   text-align: center; z-index: 2;
@@ -542,20 +618,60 @@ button { font-family: inherit; }
 
 .tp-hand-area { padding: 4px 8px 4px; flex-shrink: 0; }
 .tp-hand-row { display: flex; justify-content: center; gap: 6px; padding: 10px 6px 6px; }
-.tp-action-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; padding: 4px 8px 14px; }
+.tp-action-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; padding: 4px 8px 14px; }
 .tp-action-row button { min-width: 100px; }
+
+.tp-raise-stepper {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 22px;
+  padding: 4px 6px;
+}
+.tp-raise-stepper button {
+  min-width: 30px; width: 30px; height: 30px; padding: 0; border-radius: 50%;
+  font-size: 18px; line-height: 1; font-weight: 700;
+}
+.tp-raise-stepper .raise-amount {
+  min-width: 46px; text-align: center; font-weight: 700; color: var(--gold-text); font-family: Georgia, serif;
+}
 
 .card.tp-back {
   background: repeating-linear-gradient(135deg, var(--surface-3), var(--surface-3) 6px, var(--surface-2) 6px, var(--surface-2) 12px);
   border: 2px solid var(--accent-dark);
 }
 
-.tp-reveal { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin: 12px 0; }
-.tp-reveal-item { text-align: center; }
-.tp-reveal-item .nm { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
-.tp-reveal-item .cards { display: flex; gap: 4px; justify-content: center; }
+/* Showdown reveal - a horizontally-scrollable slider of per-player card
+   stacks, each stack overlapping "one-on-one" (like .hand-row.overlap) so
+   3+ hands fit on a phone screen without wrapping into a messy grid. */
+.tp-reveal {
+  display: flex; gap: 18px; margin: 12px 0; padding: 4px 10px 10px;
+  overflow-x: auto; overflow-y: hidden; scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+}
+.tp-reveal-item { text-align: center; flex: 0 0 auto; scroll-snap-align: center; }
+.tp-reveal-item .nm { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; white-space: nowrap; }
+.tp-reveal-item .cards { display: flex; justify-content: center; }
+.tp-reveal-item .cards .card { margin-left: -24px; }
+.tp-reveal-item .cards .card:first-child { margin-left: 0; }
 
 @media (max-width: 480px) {
   .tp-pot-amount { font-size: 26px; }
   .tp-action-row button { min-width: 84px; font-size: 13px; }
+  .tp-reveal-item .cards .card { margin-left: -28px; }
+}
+
+/* Host-only "out of coins" request queue - stacks above the felt, same
+   list-item visual language as the lobby's pending-join requests. */
+.tp-coin-requests { padding: 6px 8px 0; display: flex; flex-direction: column; gap: 6px; }
+.tp-coin-request-item {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  background: var(--surface-2); border: 1px solid var(--accent-dark); border-radius: 9px; padding: 8px 11px;
+}
+.tp-coin-request-item .txt-name { flex: 1 1 auto; font-size: 13px; color: var(--text); min-width: 120px; }
+.tp-coin-request-item input[type="number"] {
+  width: 90px; padding: 6px 8px; border-radius: 7px; background: var(--surface); border: 1px solid var(--border); color: var(--text);
+}
+.tp-out-of-coins {
+  display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
+  background: var(--surface-2); border: 1px dashed var(--danger); border-radius: 9px; padding: 8px 12px; margin: 4px 8px;
+  font-size: 13px; color: var(--text-muted); text-align: center;
 }

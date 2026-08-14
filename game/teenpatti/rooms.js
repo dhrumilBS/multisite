@@ -8,6 +8,7 @@
 
 const Shell = require("../common/roomShell");
 const Wallet = require("../wallet");
+const Profiles = require("../profiles");
 const TP = require("./logic");
 const Bot = require("./bot");
 
@@ -32,20 +33,18 @@ function createRoom(hostName, config, playerId) {
   const sideShowAllowed = config.sideShowAllowed !== false;
 
   if (playerId) {
-    const debited = Wallet.debit(playerId, buyIn);
+    const debited = Wallet.debit(playerId, buyIn, "Bought in to a new Teen Patti table");
     if (debited.error) return { error: `Buy-in failed: ${debited.error}` };
   }
 
-  const { room, token, seat } = Shell.createRoomShell(hostName, "teenpatti", players, {
-    variant,
-    jokerCount,
-    bootAmount,
-    buyIn,
-    speed,
-    sideShowAllowed,
-  });
+  const { room, token, seat } = Shell.createRoomShell(
+    hostName,
+    "teenpatti",
+    players,
+    { variant, jokerCount, bootAmount, buyIn, speed, sideShowAllowed },
+    playerId
+  );
   room.tableStacks = new Array(players).fill(buyIn);
-  room.seats[0].playerId = playerId || null;
   Shell.saveRoom(room);
   return { room, token, seat };
 }
@@ -59,7 +58,7 @@ function approveJoinRequest(room, reqId) {
   if (res.error) return res;
   const seat = room.seats[res.seat];
   if (seat.playerId) {
-    const debited = Wallet.debit(seat.playerId, room.config.buyIn);
+    const debited = Wallet.debit(seat.playerId, room.config.buyIn, `Bought in to table ${room.code}`);
     if (debited.error) {
       // Can't afford the buy-in - release the seat back to open.
       room.seats[res.seat] = { name: null, token: null, isBot: false, connected: false };
@@ -209,6 +208,7 @@ function dealHand(room, dealer) {
         showdownReveal: [],
         reason: "Only one player has chips left - hand awarded uncontested.",
       };
+      room.lastHandWinners = [winner];
     } else {
       room.game.result = {
         potAwarded: pot,
@@ -236,6 +236,35 @@ function nextHand(room, seat) {
   if (room.phase !== "handEnd") return { error: "Cannot deal next hand now." };
   dealHand(room, (room.game.dealer + 1) % room.config.players);
   return { ok: true };
+}
+
+// Host-only free grant, in response to a player running out of table chips
+// (see server.js's tpRequestCoins/tpCoinRequest relay) - not funded from
+// anyone's wallet, just added straight to the table. Takes effect on the
+// next deal via tableStacks; also nudges the live hand's stack if one is in
+// progress so it's visible immediately rather than only from the next deal.
+function addCoins(room, seat, payload) {
+  if (!room.seats[seat] || room.seats[seat].token !== room.hostToken) {
+    return { error: "Only the host can add coins." };
+  }
+  const targetSeat = payload && payload.targetSeat;
+  const amount = payload && Number(payload.amount);
+  if (!Number.isInteger(targetSeat) || targetSeat < 0 || targetSeat >= room.seats.length) {
+    return { error: "Invalid seat." };
+  }
+  if (!room.seats[targetSeat].name) return { error: "That seat is empty." };
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 1000000) return { error: "Invalid amount." };
+  const add = Math.floor(amount);
+  room.tableStacks[targetSeat] = (room.tableStacks[targetSeat] || 0) + add;
+  if (room.game && room.game.seats[targetSeat]) room.game.seats[targetSeat].stack += add;
+  Shell.saveRoom(room);
+  // Passbook entry only - this never touches the wallet balance (see Wallet.logActivity).
+  Wallet.logActivity(room.seats[targetSeat].playerId, {
+    type: "host-grant",
+    amount: add,
+    note: `Host added ${add} coins at table ${room.code}`,
+  });
+  return { ok: true, tableStacks: room.tableStacks };
 }
 
 // ---------- Betting actions ----------
@@ -307,12 +336,26 @@ function placeBet(room, seat) {
   return { ok: true };
 }
 
-function raise(room, seat) {
+// The minimum legal raise is the standard fixed-formula raise (matches the
+// call, then adds one more live-stake unit). The player-chosen raise amount
+// (see the +/- stepper in the client) may go up to double that minimum -
+// this is the "max 2x of current chaal" house-rule cap requested, keeping
+// raises bounded instead of letting one player jump the stake arbitrarily.
+function raiseCostBounds(g, s) {
+  const min = Math.min(TP.toCall(s, g.currentStake) + TP.liveStakeFor(s, g.currentStake), s.stack);
+  const max = Math.min(min * 2, s.stack);
+  return { min, max: Math.max(min, max) };
+}
+
+function raise(room, seat, payload) {
   const err = requireTurn(room, seat);
   if (err) return err;
   const g = room.game;
   const s = g.seats[seat];
-  const cost = TP.toCall(s, g.currentStake) + TP.liveStakeFor(s, g.currentStake);
+  const bounds = raiseCostBounds(g, s);
+  let cost = payload && Number(payload.amount);
+  if (!Number.isFinite(cost) || cost <= 0) cost = bounds.min;
+  cost = Math.min(bounds.max, Math.max(bounds.min, Math.floor(cost)));
   payChips(g, s, cost);
   g.currentStake = TP.nextStakeAfterAction(s, s.contributed, g.currentStake);
   s.lastAction = s.isBlind ? "blind-raise" : "seen-raise";
@@ -417,6 +460,7 @@ function endHandUncontested(room, winnerSeat) {
     showdownReveal: g.revealed,
     reason: "All others packed.",
   };
+  room.lastHandWinners = [winnerSeat];
   g.phase = "handEnd";
   room.phase = "handEnd";
   syncStacks(room);
@@ -465,6 +509,7 @@ function resolveShowdown(room, seatIds) {
     showdownReveal: g.revealed,
     reason,
   };
+  room.lastHandWinners = winners.map((w) => w.seat);
   g.phase = "handEnd";
   room.phase = "handEnd";
   syncStacks(room);
@@ -508,12 +553,13 @@ function legalActionsFor(room, seat) {
 const actions = {
   seeCards: (room, seat) => seeCards(room, seat),
   placeBet: (room, seat) => placeBet(room, seat),
-  raise: (room, seat) => raise(room, seat),
+  raise: (room, seat, payload) => raise(room, seat, payload),
   pack: (room, seat) => pack(room, seat),
   show: (room, seat) => show(room, seat),
   requestSideShow: (room, seat) => requestSideShow(room, seat),
   respondSideShow: (room, seat, payload) => respondSideShow(room, seat, payload),
   nextHand: (room, seat) => nextHand(room, seat),
+  addCoins: (room, seat, payload) => addCoins(room, seat, payload),
 };
 
 function applyBotDecision(room, seat, decision) {
@@ -617,7 +663,7 @@ function settleAndClose(room) {
       deltas[seat.playerId] = (deltas[seat.playerId] || 0) + (finalStack - room.config.buyIn);
     }
   });
-  if (Object.keys(deltas).length) Wallet.settle(deltas);
+  if (Object.keys(deltas).length) Wallet.settle(deltas, `Cashed out from table ${room.code}`);
 }
 
 // ---------- Per-player redacted view ----------
@@ -628,6 +674,7 @@ function viewFor(room, seat) {
     connected: s.isBot ? true : s.connected,
     seat: i,
     isHost: s.token && s.token === room.hostToken,
+    avatar: !s.isBot && s.playerId ? Profiles.getPhoto(s.playerId) : null,
   }));
   const isHostSeat = !!(room.seats[seat] && room.seats[seat].token && room.seats[seat].token === room.hostToken);
   const base = {
@@ -639,6 +686,7 @@ function viewFor(room, seat) {
     you: seat,
     tableStacks: room.tableStacks,
     handSeq: room.handSeq || 0,
+    lastHandWinners: room.lastHandWinners || [],
     pendingJoins: isHostSeat
       ? room.pendingJoins.map((p) => ({ reqId: p.reqId, name: p.name, requestedAt: p.requestedAt }))
       : [],
@@ -660,6 +708,12 @@ function viewFor(room, seat) {
     cards: i === seat || revealedSeats.has(i) ? s.cards : null,
   }));
 
+  const legal = legalActionsFor(room, seat);
+  const raiseBounds =
+    (legal.includes("blind-raise") || legal.includes("seen-raise")) && g.seats[seat]
+      ? raiseCostBounds(g, g.seats[seat])
+      : null;
+
   return {
     ...base,
     game: {
@@ -673,7 +727,8 @@ function viewFor(room, seat) {
       seats: gameSeats,
       sideShowRequest: g.sideShowRequest,
       result: g.result,
-      legal: legalActionsFor(room, seat),
+      legal,
+      raiseBounds,
     },
   };
 }

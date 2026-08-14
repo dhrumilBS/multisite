@@ -14,7 +14,7 @@ Node.js/Express + Socket.IO backend with authoritative server-side game state, v
 ## Commands
 
 - `npm start` — run the server (`node server.js`), listens on `PORT` (default 3030)
-- `npm test` — runs all five test scripts in sequence: `test/simulate.js`, `test/tiebreak.js`, `test/matchend.js`, `test/teenpatti-logic.js`, `test/teenpatti-simulate.js`
+- `npm test` — runs all six test scripts in sequence: `test/simulate.js`, `test/tiebreak.js`, `test/matchend.js`, `test/teenpatti-logic.js`, `test/teenpatti-simulate.js`, `test/profiles-and-coins.js`
 - Run a single test file directly, e.g. `node test/teenpatti-logic.js`
 - No linter, bundler, or build step is configured — `public/` is served as static files as-is.
 
@@ -26,6 +26,7 @@ Each exits non-zero (throws or `process.exit(1)`) on failure and prints `OK`/`FA
 - `test/matchend.js` — verifies Mindi match-end conditions, that `nextHand` refuses after match end, and that room deletion works.
 - `test/teenpatti-logic.js` — deterministic unit tests for `game/teenpatti/logic.js`'s hand evaluation/comparison: every hand category, the A-2-3-vs-Q-K-A low/high straight edge case, AK47/Joker wild substitution, three-wild self-substitution, and Muflis win-direction flipping.
 - `test/teenpatti-simulate.js` — full bot-vs-bot Teen Patti tables across players 3-7 × every variant, asserting the pot is always fully distributed and no stack goes negative. Also the harness that caught the two real engine bugs described below.
+- `test/profiles-and-coins.js` — profile name/photo validation (clamping, anchored data-URI format rejection, oversized-payload rejection) and the host-only `addCoins` action (host check, amount/seat validation, `tableStacks` + live-hand stack updates).
 
 ## Architecture
 
@@ -64,6 +65,14 @@ server.js                 # GAMES = {mindi, teenpatti} registry; dispatches by r
 
 Teen Patti chip balances persist across matches/sessions, unlike Mindi's per-room `matchScore`. Identity is a client-generated `playerId` (UUID in `localStorage["player_id"]`, distinct from the per-room reconnect `token`) — a known, accepted trust limitation (no real auth), consistent with the existing token model. Balances live in a single in-memory-plus-atomic-write `data/wallets.json` map (`init`/`ensureAccount`/`debit`/`credit`/`settle`). Buy-in is debited when creating/approving into a Teen Patti room; `settleAndClose(room)` cashes each human seat's final table stack back out against its buy-in in one call, invoked when the host ends the room. Chips otherwise stay at the table across hands and disconnects — they only settle to the wallet when the room actually closes.
 
+**Coin top-up requests** are separate from the wallet and Teen Patti-only: when a seat's `tableStacks` entry hits 0, the client shows an "ask host for more" button (`socket.emit("tpRequestCoins")`); `server.js` validates the seat is actually broke, then relays `tpCoinRequest` to *only* the host's socket (`findHostSocket(room)`, the same "look up one specific socket" pattern `approveJoin` already uses). The host's `addCoins` action (in `TeenPatti.actions`, host-token-checked like `nextHand`) is a **free grant** straight onto `tableStacks` — not funded from the host's own wallet or anyone else's. This is a deliberate design choice: a host's grants do flow through to a player's real wallet balance if they later cash out via `settleAndClose` (settlement is just `finalStack - buyIn`), which is the accepted consequence of a host choosing to gift chips in this real-money-free game, not a bug to guard against.
+
+**Passbook (transaction ledger)**: every wallet-touching call (`debit`/`credit`/`settle`) appends a `{type, amount, balanceAfter, note, at}` entry to that player's `ledger` array in `data/wallets.json` (capped at 200 entries, same cap-and-slice pattern `room.chat` already uses). `Wallet.logActivity(playerId, {type, amount, note})` appends a passbook line *without* touching the balance (`balanceAfter: null`) — used for host coin grants, which are informational for the receiving player but never move their wallet. `getLedger(playerId)` returns most-recent-first. Client: `socket.emit("getLedger", {playerId})` powers a "Passbook" button on the home screen's profile card (`#ovPassbook` overlay, `renderPassbook()` in `client.js`) — reachable any time, not just mid-game, since it's a per-player history, not per-room state.
+
+### Player profiles (`game/profiles.js`)
+
+Name + an optional small photo, keyed by the same `playerId` as the wallet but shared across *both* games (unlike the wallet). Same single-file/atomic-write/load-once pattern as `wallet.js`, in `data/profiles.json`. Photos are never uploaded via a file endpoint — the browser downscales/crops to a 128×128 JPEG data URI client-side (`resizeImageToDataURL` in `client.js`) before sending it over the existing socket as `setProfile`. Server-side validation anchors the *entire* string against `^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$` (not just a prefix check) — this string gets rendered into other players' `<img>` elements, so a loose check would be an HTML-injection vector. `viewFor` in both `game/rooms.js` and `game/teenpatti/rooms.js` exposes each seat's `avatar` via `Profiles.getPhoto(seat.playerId)`; client code always sets `img.src` as a DOM property (`setSeatAvatar()` in `client.js`, reused by `teenpatti.js`) rather than interpolating the data URI into an `innerHTML` template, as defense in depth for other players' avatars even though the server already validates the format.
+
 ### Room state and persistence
 
 - Each room is identified by a 6-char code. In-memory rooms live in a shared `rooms` Map (`game/common/roomShell.js`); every mutation calls `saveRoom()` which does an atomic write (`.tmp` + rename) to `saves/<CODE>.json`. Old saves without `config.gameType` default to `"mindi"` on load.
@@ -95,3 +104,6 @@ Single-page app with no router: `index.html` has one `<div>` per screen (`screen
 - Host-moderated join requests (request → approve/reject) and invite links (`?join=CODE`).
 - In-room chat with rate limiting.
 - A home-screen game selector (Mindi / Teen Patti) picks which config panel and room type `createRoom` builds.
+- Player profile card on the home screen: editable name + an uploadable photo (client-resized, persisted server-side per `playerId`, shown as an avatar at every seat in both games).
+- Teen Patti's "ask host for more coins" flow: a broke player can request a top-up; the host sees a small request queue and grants any amount as a free stack top-up.
+- A coin passbook per player (buy-ins, cash-outs, and host top-ups, most-recent-first), viewable any time from the home screen profile card.

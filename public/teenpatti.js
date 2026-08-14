@@ -29,6 +29,11 @@ const TP_ACTION_EVENT = {
 
 let tpChatOpen = false;
 let tpSeenChat = 0;
+let tpRaiseAmount = null; // player-selected raise cost, clamped to g.raiseBounds each render
+let tpRaiseTurnKey = null; // resets tpRaiseAmount back to the minimum whenever a new turn starts
+let tpCoinRequestSent = false; // guards against spamming "ask host" while a request is already in flight
+let tpCoinRequests = []; // host-side queue: [{seat, name}], de-duplicated by seat
+let tpLastState = null; // so the coin-request panel's own buttons can re-render after acting
 
 function tpCardBackHTML() {
   return `<div class="card tp-back"></div>`;
@@ -47,6 +52,7 @@ function tpEmit(eventAction, payload) {
 }
 
 function renderTeenPatti(state, extra) {
+  tpLastState = state;
   const g = state.game;
   const you = state.you;
   const n = state.config.players;
@@ -62,6 +68,15 @@ function renderTeenPatti(state, extra) {
   const ring = $("tpSeatsRing");
   ring.innerHTML = "";
   const RX = 45, RY = 41;
+  // Chip leader - the seated player currently holding the most chips at the
+  // table. Only meaningful with 2+ seated players, otherwise everyone would
+  // trivially "lead".
+  const seatedStacks = [];
+  for (let i = 0; i < n; i++) {
+    if (state.seats[i] && state.seats[i].name) seatedStacks.push(g.seats[i].stack);
+  }
+  const maxStack = seatedStacks.length > 1 ? Math.max(...seatedStacks) : -1;
+  const lastWinners = state.lastHandWinners || [];
   for (let k = 0; k < n; k++) {
     const seat = (you + k) % n;
     const angle = seatAngle(seat, you, n);
@@ -69,8 +84,10 @@ function renderTeenPatti(state, extra) {
     const gs = g.seats[seat];
     const identity = state.seats[seat];
     const isTurn = state.phase === "betting" && g.turnSeat === seat && !state.paused;
+    const isLastWinner = lastWinners.includes(seat);
+    const isChipLeader = maxStack > 0 && gs.stack === maxStack;
     const div = document.createElement("div");
-    div.className = `seat${isTurn ? " turn" : ""}${seat === you ? " me" : ""}`;
+    div.className = `seat${isTurn ? " turn" : ""}${seat === you ? " me" : ""}${isLastWinner ? " last-winner" : ""}${isChipLeader ? " chip-leader" : ""}`;
 
     const statusBits = [];
     if (!gs.active) statusBits.push("out");
@@ -80,13 +97,18 @@ function renderTeenPatti(state, extra) {
       if (gs.isAllIn) statusBits.push("all-in");
     }
 
+    const badges =
+      (isLastWinner ? '<span class="seat-badge win-badge" title="Won the last hand">&#127942;</span>' : "") +
+      (isChipLeader ? '<span class="seat-badge chip-badge" title="Chip leader">&#128176;</span>' : "");
+
     if (seat === you) {
-      div.innerHTML = `<div class="avatar">You${isTurn ? " · your turn" : ""}</div><div class="sub">${gs.stack} chips · ${statusBits.join(", ")}</div>`;
+      div.innerHTML = `<div class="avatar">You${isTurn ? " · your turn" : ""}</div>${badges}<div class="sub">${gs.stack} chips · ${statusBits.join(", ")}</div>`;
     } else {
       div.innerHTML = `
-        <div class="avatar">${esc(names[seat][0] || "?")}</div>
+        <div class="avatar">${esc(names[seat][0] || "?")}</div>${badges}
         <div class="nm">${esc(names[seat])}${identity.isBot ? " 🤖" : ""}</div>
         <div class="sub">${gs.stack} chips · ${statusBits.join(", ")}${!identity.connected && !identity.isBot ? ' <span class="offline">offline</span>' : ""}</div>`;
+      setSeatAvatar(div, identity.avatar);
     }
     div.style.left = pos.x + "%";
     div.style.top = pos.y + "%";
@@ -120,13 +142,74 @@ function renderTeenPatti(state, extra) {
   // actions - built straight from the server's legal-action list for this seat
   const actRow = $("tpActionRow");
   actRow.innerHTML = "";
+  const raiseType = (g.legal || []).find((t) => t === "blind-raise" || t === "seen-raise");
+
+  // Raise +/- stepper - lets the player dial in a raise between the server's
+  // minimum legal raise and its cap of 2x that minimum, rather than always
+  // raising by the fixed minimum amount.
+  if (raiseType && g.raiseBounds) {
+    const turnKey = `${state.code}-${state.handSeq}-${g.turnSeat}`;
+    if (tpRaiseTurnKey !== turnKey) {
+      tpRaiseTurnKey = turnKey;
+      tpRaiseAmount = g.raiseBounds.min;
+    }
+    tpRaiseAmount = Math.min(g.raiseBounds.max, Math.max(g.raiseBounds.min, tpRaiseAmount));
+    const canStep = g.raiseBounds.max > g.raiseBounds.min;
+    const step = Math.max(1, Math.round((g.raiseBounds.max - g.raiseBounds.min) / 5) || 1);
+    const stepper = document.createElement("div");
+    stepper.className = "tp-raise-stepper";
+    stepper.innerHTML =
+      `<button type="button" class="tiny raise-step-minus"${canStep ? "" : " disabled"}>&minus;</button>` +
+      `<span class="raise-amount">${tpRaiseAmount}</span>` +
+      `<button type="button" class="tiny raise-step-plus"${canStep ? "" : " disabled"}>+</button>`;
+    stepper.querySelector(".raise-step-minus").onclick = () => {
+      tpRaiseAmount = Math.max(g.raiseBounds.min, tpRaiseAmount - step);
+      renderTeenPatti(state, extra);
+    };
+    stepper.querySelector(".raise-step-plus").onclick = () => {
+      tpRaiseAmount = Math.min(g.raiseBounds.max, tpRaiseAmount + step);
+      renderTeenPatti(state, extra);
+    };
+    actRow.appendChild(stepper);
+  }
+
   (g.legal || []).forEach((type) => {
     const btn = document.createElement("button");
     btn.className = type === "pack" ? "dark" : "gold";
-    btn.textContent = TP_ACTION_LABEL[type] || type;
-    btn.onclick = () => tpEmit(TP_ACTION_EVENT[type] || type);
+    btn.textContent = type === raiseType ? `${TP_ACTION_LABEL[type]} to ${tpRaiseAmount}` : TP_ACTION_LABEL[type] || type;
+    btn.onclick = () => tpEmit(TP_ACTION_EVENT[type] || type, type === raiseType ? { amount: tpRaiseAmount } : undefined);
     actRow.appendChild(btn);
   });
+
+  // out-of-coins banner - independent of whose turn it is, since running out
+  // isn't a turn action. tableStacks (not the current hand's live stack) is
+  // the authoritative "chips available" figure across hands.
+  const outBox = $("tpOutOfCoins");
+  const myStackNow = (state.tableStacks && state.tableStacks[you]) || 0;
+  if (myStackNow <= 0 && !tpCoinRequestSent) {
+    outBox.style.display = "flex";
+    outBox.innerHTML = `<span>You're out of coins.</span>`;
+    const btn = document.createElement("button");
+    btn.className = "tiny";
+    btn.textContent = "Ask host for more";
+    btn.onclick = () => {
+      window.socket.emit("tpRequestCoins", {}, (res) => {
+        if (res && res.error) return toast(res.error);
+        tpCoinRequestSent = true;
+        toast("Request sent to the host.");
+        renderTeenPatti(state, extra);
+      });
+    };
+    outBox.appendChild(btn);
+  } else if (myStackNow > 0) {
+    tpCoinRequestSent = false;
+    outBox.style.display = "none";
+  } else {
+    outBox.style.display = "none";
+  }
+
+  // host-side: pending "please add coins" requests from other players
+  renderTpCoinRequests(state);
 
   // side-show response overlay
   const pendingForMe = g.sideShowRequest && g.sideShowRequest.status === "pending" && g.sideShowRequest.target === you;
@@ -191,6 +274,43 @@ function renderTeenPatti(state, extra) {
   renderTpChat(state);
 }
 
+function renderTpCoinRequests(state) {
+  const box = $("tpCoinRequests");
+  const isHost = state.seats[state.you] && state.seats[state.you].isHost;
+  // A request only makes sense while its seat is still actually broke -
+  // drop it silently if someone else already topped them up.
+  tpCoinRequests = tpCoinRequests.filter((r) => ((state.tableStacks && state.tableStacks[r.seat]) || 0) <= 0);
+  if (!isHost || !tpCoinRequests.length) {
+    box.style.display = "none";
+    box.innerHTML = "";
+    return;
+  }
+  box.style.display = "flex";
+  box.innerHTML = "";
+  tpCoinRequests.forEach((req) => {
+    const row = document.createElement("div");
+    row.className = "tp-coin-request-item";
+    row.innerHTML =
+      `<span class="txt-name">${esc(req.name)} is out of coins</span>` +
+      `<input type="number" min="1" step="1" value="${state.config.buyIn || 500}" />` +
+      `<button class="tiny accept">Add</button>` +
+      `<button class="tiny reject">Dismiss</button>`;
+    const input = row.querySelector("input");
+    row.querySelector(".accept").onclick = () => {
+      const amount = Math.floor(Number(input.value));
+      if (!amount || amount <= 0) return toast("Enter a valid amount.");
+      tpEmit("addCoins", { targetSeat: req.seat, amount });
+      tpCoinRequests = tpCoinRequests.filter((r) => r.seat !== req.seat);
+      if (tpLastState) renderTpCoinRequests(tpLastState);
+    };
+    row.querySelector(".reject").onclick = () => {
+      tpCoinRequests = tpCoinRequests.filter((r) => r.seat !== req.seat);
+      if (tpLastState) renderTpCoinRequests(tpLastState);
+    };
+    box.appendChild(row);
+  });
+}
+
 function renderTpChat(state) {
   const msgs = state.chat || [];
   const box = $("tpChatMsgs");
@@ -221,6 +341,14 @@ $("tpChatText").addEventListener("keydown", (e) => e.key === "Enter" && tpSendCh
 
 $("tpBtnTheme").onclick = openThemePicker;
 $("tpBtnSaveExit").onclick = doSaveExit;
+
+// Host-only: relayed from server.js when some other seat hits 0 chips and
+// asks for a top-up. Queued client-side only - not part of persisted room
+// state, since it's a transient notification, not game state.
+window.socket.on("tpCoinRequest", ({ seat, name }) => {
+  if (!tpCoinRequests.some((r) => r.seat === seat)) tpCoinRequests.push({ seat, name });
+  if (tpLastState) renderTpCoinRequests(tpLastState);
+});
 
 $("tpBtnSideShowAccept").onclick = () => tpEmit("respondSideShow", { accept: true });
 $("tpBtnSideShowDecline").onclick = () => tpEmit("respondSideShow", { accept: false });

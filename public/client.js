@@ -5,6 +5,30 @@ const socket = io();
 window.socket = socket; // shared with teenpatti.js, a separate non-module script
 const $ = (id) => document.getElementById(id);
 
+// Best-effort landscape lock on mobile. The Screen Orientation API only
+// grants lock() while the page is fullscreen (and iOS Safari doesn't support
+// it at all), so the CSS rotate-overlay above is the real cross-device
+// fallback - this just upgrades the experience where the browser allows it.
+function tryLockLandscape() {
+  try {
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock("landscape").catch(() => {});
+    }
+  } catch (e) {}
+}
+document.addEventListener(
+  "click",
+  () => {
+    if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+      document.documentElement.requestFullscreen().then(tryLockLandscape).catch(() => {});
+    } else {
+      tryLockLandscape();
+    }
+  },
+  { once: true }
+);
+tryLockLandscape();
+
 // Persistent per-browser identity for the Teen Patti chip wallet - distinct
 // from the per-room reconnect token below, since a wallet balance outlives
 // any one room. Generated once and reused forever from this browser.
@@ -183,6 +207,130 @@ $("btnCloseTheme").onclick = () => ($("ovTheme").style.display = "none");
 
 // ---------- home screen ----------
 try { $("playerName").value = localStorage.getItem("mindi_name") || ""; } catch (e) {}
+
+// ---------- profile (name + photo) ----------
+// Server-persisted per playerId, mirrored into localStorage as a fast-paint
+// cache so the avatar shows instantly on next load without waiting on a
+// round trip.
+let profilePhoto = null;
+try {
+  profilePhoto = localStorage.getItem("profile_photo_cache") || null;
+} catch (e) {}
+
+function renderProfilePreview() {
+  if (profilePhoto) {
+    $("profileAvatarImg").src = profilePhoto;
+    $("profileAvatarImg").style.display = "block";
+    $("profileAvatarFallback").style.display = "none";
+  } else {
+    $("profileAvatarImg").style.display = "none";
+    $("profileAvatarFallback").style.display = "flex";
+    $("profileAvatarFallback").textContent = ($("playerName").value.trim()[0] || "?").toUpperCase();
+  }
+}
+renderProfilePreview();
+$("playerName").addEventListener("input", () => {
+  if (!profilePhoto) renderProfilePreview();
+});
+
+let profileSaveTimer = null;
+function saveProfile(partial) {
+  if (!playerId) return;
+  socket.emit("setProfile", { playerId, ...partial }, (res) => {
+    if (res && res.error) toast(res.error);
+  });
+}
+function saveProfileNameDebounced() {
+  clearTimeout(profileSaveTimer);
+  profileSaveTimer = setTimeout(() => saveProfile({ name: $("playerName").value.trim() }), 600);
+}
+$("playerName").addEventListener("input", saveProfileNameDebounced);
+
+if (playerId) {
+  socket.emit("getProfile", { playerId }, (res) => {
+    if (!res) return;
+    if (res.photo && !profilePhoto) {
+      profilePhoto = res.photo;
+      try { localStorage.setItem("profile_photo_cache", profilePhoto); } catch (e) {}
+      renderProfilePreview();
+    }
+    if (res.name && !$("playerName").value.trim()) {
+      $("playerName").value = res.name;
+      renderProfilePreview();
+    }
+  });
+}
+
+// Resize/crop any chosen image to a small square before it ever leaves the
+// browser - keeps the data URI small (a few KB) and uniform for every avatar.
+function resizeImageToDataURL(file, size, cb) {
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      const scale = Math.max(size / img.width, size / img.height);
+      const w = img.width * scale, h = img.height * scale;
+      ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+      cb(canvas.toDataURL("image/jpeg", 0.82));
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+// ---------- passbook (coin transaction history) ----------
+function renderPassbook(res) {
+  $("passbookBalance").textContent = (res && res.balance) || 0;
+  const list = $("passbookList");
+  const ledger = (res && res.ledger) || [];
+  if (!ledger.length) {
+    list.innerHTML = `<div class="passbook-empty">No coin activity yet - play a Teen Patti hand to get started.</div>`;
+    return;
+  }
+  list.innerHTML = ledger
+    .map((e) => {
+      const cls = e.type === "host-grant" ? "neutral" : e.amount >= 0 ? "credit" : "debit";
+      const sign = e.amount > 0 ? "+" : "";
+      const balanceText = e.balanceAfter != null ? `Balance: ${e.balanceAfter}` : "Table chips only";
+      const when = new Date(e.at).toLocaleString();
+      return `<div class="passbook-item">
+        <div class="pb-info">
+          <div class="pb-note">${esc(e.note || e.type)}</div>
+          <div class="pb-when">${esc(when)}</div>
+        </div>
+        <div>
+          <div class="pb-amount ${cls}">${sign}${e.amount} coins</div>
+          <div class="pb-balance">${esc(balanceText)}</div>
+        </div>
+      </div>`;
+    })
+    .join("");
+}
+$("btnPassbook").onclick = () => {
+  if (!playerId) return;
+  $("ovPassbook").style.display = "flex";
+  socket.emit("getLedger", { playerId }, (res) => {
+    if (res && res.error) return toast(res.error);
+    renderPassbook(res);
+  });
+};
+$("btnClosePassbook").onclick = () => ($("ovPassbook").style.display = "none");
+
+$("btnUploadPhoto").onclick = () => $("photoFileInput").click();
+$("photoFileInput").addEventListener("change", (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  resizeImageToDataURL(file, 128, (dataUrl) => {
+    profilePhoto = dataUrl;
+    try { localStorage.setItem("profile_photo_cache", dataUrl); } catch (e2) {}
+    renderProfilePreview();
+    saveProfile({ name: $("playerName").value.trim(), photo: dataUrl });
+  });
+  e.target.value = "";
+});
 
 // Prefill + jump to the join tab when arriving via a shared invite link (?join=CODE)
 try {
@@ -399,6 +547,16 @@ function renderLobby() {
     else if (s.name && !s.connected && !s.isBot) right = `<span class="off">offline</span>`;
     else if (!s.name && isHost) right = `<button class="tiny" data-bot="${i}">+ Bot</button>`;
     div.innerHTML = who + right;
+    if (s.avatar) {
+      const whoEl = div.querySelector(".who");
+      if (whoEl) {
+        const img = document.createElement("img");
+        img.className = "seat-card-avatar";
+        img.alt = "";
+        img.src = s.avatar;
+        whoEl.insertBefore(img, whoEl.firstChild);
+      }
+    }
     seatsEl.appendChild(div);
   });
   seatsEl.querySelectorAll("[data-bot]").forEach((b) => {
@@ -450,6 +608,21 @@ function trickSlotPos(angleDeg) {
 }
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+}
+// Replaces a ".avatar" element's initial-letter content with a real photo -
+// sets img.src via a DOM property, never by string-interpolating the data
+// URI into an innerHTML template, since this data comes from OTHER players
+// (server-validated, but this is defense in depth).
+function setSeatAvatar(container, avatarDataUrl) {
+  if (!avatarDataUrl) return;
+  const avatarEl = container.querySelector(".avatar");
+  if (!avatarEl) return;
+  avatarEl.textContent = "";
+  const img = document.createElement("img");
+  img.className = "avatar-photo";
+  img.alt = "";
+  img.src = avatarDataUrl;
+  avatarEl.appendChild(img);
 }
 function cardHTML(card, cls) {
   const red = isRed(card.suit) ? " red" : "";
@@ -507,6 +680,7 @@ function renderGame() {
         <div class="avatar">${esc(names[seat][0] || "?")}</div>
         <div class="nm">${esc(names[seat])}${s.isBot ? " 🤖" : ""}</div>
         <div class="sub">${g.counts[seat]} cards${g.cutBy === seat ? " · ✂" : ""}${!s.connected && !s.isBot ? ' <span class="offline">offline</span>' : ""}</div>`;
+      setSeatAvatar(div, s.avatar);
     }
     return div;
   }

@@ -110,14 +110,14 @@ function clampRange(value, min, max, fallback) {
 // flat alongside {gameType, players} - each game module owns its own keys
 // (e.g. Mindi's decks/trumpMode, Teen Patti's variant/bootAmount) and there's
 // no collision since the two games use disjoint config key names.
-function createRoomShell(hostName, gameType, seatCount, extraConfig) {
+function createRoomShell(hostName, gameType, seatCount, extraConfig, hostPlayerId) {
   const code = makeCode();
   const token = crypto.randomUUID();
   const seats = [];
   for (let i = 0; i < seatCount; i++) {
     seats.push({ name: null, token: null, isBot: false, connected: false });
   }
-  seats[0] = { name: cleanName(hostName), token, isBot: false, connected: true };
+  seats[0] = { name: cleanName(hostName), token, isBot: false, connected: true, playerId: hostPlayerId || null };
   const room = {
     code,
     config: { gameType, players: seatCount, ...(extraConfig || {}) },

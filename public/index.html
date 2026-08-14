@@ -16,6 +16,12 @@
 </head>
 <body>
 
+<!-- Shown only in portrait on small/mobile screens - this app is designed landscape-only. -->
+<div id="rotateOverlay" class="rotate-overlay">
+  <div class="rotate-icon">&#128241;</div>
+  <div class="rotate-text">Please rotate your device to landscape to play</div>
+</div>
+
 <!-- HOME -->
 <div id="screen-home" class="screen">
   <div class="home-wrap">
@@ -27,8 +33,19 @@
     </div>
 
     <div class="panel">
-      <label class="lbl">Your name</label>
-      <input id="playerName" class="txt" maxlength="16" placeholder="e.g. Rohan" />
+      <div class="profile-card">
+        <div class="avatar-upload">
+          <img id="profileAvatarImg" class="profile-avatar" style="display:none" alt="" />
+          <div id="profileAvatarFallback" class="profile-avatar fallback">?</div>
+          <button id="btnUploadPhoto" type="button" class="avatar-edit-btn" title="Change photo">📷</button>
+          <input id="photoFileInput" type="file" accept="image/*" style="display:none" />
+        </div>
+        <div class="profile-fields">
+          <label class="lbl">Your name</label>
+          <input id="playerName" class="txt" maxlength="16" placeholder="e.g. Rohan" />
+        </div>
+        <button id="btnPassbook" type="button" class="tiny passbook-btn" title="Coin passbook">📒 Passbook</button>
+      </div>
 
       <div class="tabs">
         <button class="tab active" data-tab="create">Create room</button>
@@ -285,6 +302,8 @@
     </div>
   </div>
 
+  <div id="tpCoinRequests" class="tp-coin-requests" style="display:none"></div>
+
   <div class="tp-table-area" id="tpTableArea">
     <div class="tp-pot-center">
       <div class="tp-pot-label">Pot</div>
@@ -296,6 +315,7 @@
 
   <div class="tp-hand-area">
     <div id="tpHandRow" class="tp-hand-row"></div>
+    <div id="tpOutOfCoins" class="tp-out-of-coins" style="display:none"></div>
     <div id="tpActionRow" class="tp-action-row"></div>
   </div>
 
@@ -349,6 +369,16 @@
     <h2>Choose a theme</h2>
     <div class="theme-grid" id="themeGrid"></div>
     <button id="btnCloseTheme" class="dark">Close</button>
+  </div>
+</div>
+
+<!-- PASSBOOK (coin transaction history - reachable from the home screen profile card) -->
+<div id="ovPassbook" class="overlay" style="display:none">
+  <div class="panel small">
+    <h2>Your coin passbook</h2>
+    <p class="muted center">Current balance: <b id="passbookBalance" class="gold-text">0</b> coins</p>
+    <div id="passbookList" class="passbook-list"></div>
+    <button id="btnClosePassbook" class="dark">Close</button>
   </div>
 </div>
 

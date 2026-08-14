@@ -1,11 +1,11 @@
 {
   "name": "mindi-multiplayer",
   "version": "1.0.0",
-  "description": "Real-time multiplayer Mindi (Mendikot) card game - live players + bots, with save/resume",
+  "description": "Real-time multiplayer card room (Mindi/Mendikot + Teen Patti) - live players + bots, profiles, chip wallet, save/resume",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/simulate.js && node test/tiebreak.js && node test/matchend.js && node test/teenpatti-logic.js && node test/teenpatti-simulate.js"
+    "test": "node test/simulate.js && node test/tiebreak.js && node test/matchend.js && node test/teenpatti-logic.js && node test/teenpatti-simulate.js && node test/profiles-and-coins.js"
   },
   "engines": {
     "node": ">=18"

@@ -6,6 +6,7 @@
 "use strict";
 
 const Shell = require("./common/roomShell");
+const Profiles = require("./profiles");
 const {
   buildDeck,
   shuffle,
@@ -23,12 +24,12 @@ Shell.registerGameType("mindi", { pausablePhases: ["playing", "trumpSelect"] });
 const rooms = Shell.rooms;
 
 // ---------- Room creation / joining ----------
-function createRoom(hostName, config) {
+function createRoom(hostName, config, playerId) {
   const players = Shell.clampChoice(config.players, [4, 6, 8], 4);
   const decks = Shell.clampChoice(config.decks, [3, 4, 5], 3);
   const trumpMode = Shell.clampChoice(config.trumpMode, ["cut", "hidden", "random", "none"], "cut");
   const speed = Shell.clampChoice(config.speed, ["relaxed", "normal", "fast"], "normal");
-  const { room, token, seat } = Shell.createRoomShell(hostName, "mindi", players, { decks, trumpMode, speed });
+  const { room, token, seat } = Shell.createRoomShell(hostName, "mindi", players, { decks, trumpMode, speed }, playerId);
   room.matchScore = { 0: 0, 1: 0 };
   room.matchResult = null;
   Shell.saveRoom(room);
@@ -212,6 +213,7 @@ function viewFor(room, seat) {
     connected: s.isBot ? true : s.connected,
     seat: i,
     isHost: s.token && s.token === room.hostToken,
+    avatar: !s.isBot && s.playerId ? Profiles.getPhoto(s.playerId) : null,
   }));
   const isHostSeat = !!(room.seats[seat] && room.seats[seat].token && room.seats[seat].token === room.hostToken);
   const base = {

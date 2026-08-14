@@ -12,6 +12,7 @@ const { Server } = require("socket.io");
 
 const Shell = require("./game/common/roomShell");
 const Wallet = require("./game/wallet");
+const Profiles = require("./game/profiles");
 const R = require("./game/rooms");
 const TeenPatti = require("./game/teenpatti/rooms");
 const { botChooseCard, botChooseTrump } = require("./game/bot");
@@ -22,6 +23,7 @@ function gameFor(room) {
 }
 
 Wallet.init();
+Profiles.init();
 
 const app = express();
 const server = http.createServer(app);
@@ -60,7 +62,31 @@ const createRoomLimiter = makeLimiter(3, 60000);
 const requestJoinLimiter = makeLimiter(10, 10000);
 const playCardLimiter = makeLimiter(20, 5000);
 const tpActionLimiter = makeLimiter(20, 5000);
-const LIMITERS = [chatLimiter, createRoomLimiter, requestJoinLimiter, playCardLimiter, tpActionLimiter];
+const profileLimiter = makeLimiter(10, 30000);
+const coinRequestLimiter = makeLimiter(3, 60000);
+const ledgerLimiter = makeLimiter(10, 30000);
+const LIMITERS = [
+  chatLimiter,
+  createRoomLimiter,
+  requestJoinLimiter,
+  playCardLimiter,
+  tpActionLimiter,
+  profileLimiter,
+  coinRequestLimiter,
+  ledgerLimiter,
+];
+
+// Find whichever connected socket is currently seated as the room's host -
+// same "targeted emit to one specific socket" pattern approveJoin/rejectJoin
+// already use (there, keyed by a join-request's stashed socketId).
+function findHostSocket(room) {
+  const hostSeat = room.seats.findIndex((s) => s.token === room.hostToken);
+  if (hostSeat === -1) return null;
+  for (const sock of io.sockets.sockets.values()) {
+    if (sock.data.roomCode === room.code && sock.data.seat === hostSeat) return sock;
+  }
+  return null;
+}
 
 function clearRoomTimer(code) {
   if (timers.has(code)) {
@@ -362,6 +388,47 @@ io.on("connection", (socket) => {
   socket.on("walletBalance", ({ playerId }, cb) => {
     if (!playerId) return cb && cb({ balance: 0 });
     cb && cb({ balance: Wallet.getBalance(playerId) });
+  });
+
+  socket.on("getLedger", ({ playerId }, cb) => {
+    if (!ledgerLimiter.allow(socket.id)) return cb && cb({ error: "Slow down." });
+    if (!playerId) return cb && cb({ ledger: [] });
+    cb && cb({ ledger: Wallet.getLedger(playerId), balance: Wallet.getBalance(playerId) });
+  });
+
+  socket.on("getProfile", ({ playerId }, cb) => {
+    if (!playerId) return cb && cb({ name: null, photo: null });
+    cb && cb(Profiles.getProfile(playerId));
+  });
+
+  socket.on("setProfile", ({ playerId, name, photo }, cb) => {
+    if (!profileLimiter.allow(socket.id)) return cb && cb({ error: "Slow down." });
+    if (!playerId) return cb && cb({ error: "No player id." });
+    const res = Profiles.setProfile(playerId, { name, photo });
+    cb && cb(res);
+    // Live seats referencing this playerId should pick up the new name/photo
+    // in every room they're currently sitting in, not just their next join.
+    if (res.ok) {
+      for (const code of new Set([...io.sockets.sockets.values()].map((s) => s.data.roomCode).filter(Boolean))) {
+        const room = Shell.loadRoom(code);
+        if (room && room.seats.some((s) => s.playerId === playerId)) broadcast(room);
+      }
+    }
+  });
+
+  // A Teen Patti player at 0 table chips asks the host for more - relayed
+  // only to the host's own socket, never broadcast to the table.
+  socket.on("tpRequestCoins", (_, cb) => {
+    if (!coinRequestLimiter.allow(socket.id)) return cb && cb({ error: "Slow down." });
+    const room = getRoom();
+    if (!room) return cb && cb({ error: "No room." });
+    if (room.config.gameType !== "teenpatti") return cb && cb({ error: "Not a Teen Patti room." });
+    const seat = socket.data.seat;
+    if (seat == null || !room.seats[seat] || !room.seats[seat].name) return cb && cb({ error: "Not seated." });
+    if ((room.tableStacks[seat] || 0) > 0) return cb && cb({ error: "You still have chips." });
+    const hostSock = findHostSocket(room);
+    if (hostSock) hostSock.emit("tpCoinRequest", { seat, name: room.seats[seat].name });
+    cb && cb({ ok: true });
   });
 
   socket.on("chat", ({ text }) => {
